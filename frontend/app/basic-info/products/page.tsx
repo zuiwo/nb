@@ -1,0 +1,380 @@
+'use client';
+import React, { useState, useEffect } from 'react';
+import { Table, Button, Drawer, message, Input, Select, Space, Card, Spin, Switch } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import ProductForm from '@/ui/forms/ProductForm';
+import { productService } from '@/lib/services/productService';
+import { Product, CreateProductDto, UpdateProductDto } from '@/lib/types/product-types';
+import { formatPrice, formatDate } from '@/lib/utils/format';
+
+const { Option } = Select;
+const { Search } = Input;
+
+const ProductsPage = () => {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentProduct, setCurrentProduct] = useState<Product | null>(null);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [searchParams, setSearchParams] = useState({
+    code: '',
+    name: '',
+    category: '',
+    status: undefined as number | undefined
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [localSearchParams, setLocalSearchParams] = useState({
+    code: '',
+    name: '',
+    category: '',
+    status: undefined as number | undefined
+  });
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const data = await productService.getProducts();
+      setProducts(data);
+    } catch (error) {
+      console.error('获取产品列表失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreate = async (values: CreateProductDto | UpdateProductDto) => {
+    try {
+      await productService.createProduct(values as CreateProductDto);
+      console.log('产品创建成功');
+      setIsDrawerVisible(false);
+      fetchProducts();
+    } catch (error) {
+      console.error('产品创建失败');
+      console.error('Failed to create product:', error);
+      // 重新抛出错误，让ProductForm组件捕获并显示
+      throw error;
+    }
+  };
+
+  const handleUpdate = async (values: CreateProductDto | UpdateProductDto) => {
+    if (!currentProduct) return;
+    
+    try {
+      await productService.updateProduct(currentProduct.id, values as UpdateProductDto);
+      console.log('产品更新成功');
+      setIsDrawerVisible(false);
+      fetchProducts();
+    } catch (error) {
+      console.error('产品更新失败');
+      console.error('Failed to update product:', error);
+      // 重新抛出错误，让ProductForm组件捕获并显示
+      throw error;
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await productService.deleteProduct(id);
+      console.log('产品删除成功');
+      fetchProducts();
+    } catch (error) {
+      console.error('产品删除失败');
+      console.error('Failed to delete product:', error);
+    }
+  };
+
+  // 批量删除处理
+  const handleBatchDelete = async () => {
+    if (selectedRowKeys.length === 0) return;
+    
+    try {
+      await productService.batchDeleteProducts(selectedRowKeys.map(key => Number(key)));
+      console.log('批量删除成功');
+      setSelectedRowKeys([]);
+      fetchProducts();
+    } catch (error) {
+      console.error('批量删除失败');
+      console.error('Failed to batch delete products:', error);
+    }
+  };
+
+  // 表格行选择处理
+  const onSelectChange = (newSelectedRowKeys: React.Key[]) => {
+    setSelectedRowKeys(newSelectedRowKeys);
+  };
+
+  // 搜索处理
+  const handleSearch = () => {
+    setSearchParams(localSearchParams);
+    fetchProducts();
+  };
+
+  // 重置搜索条件
+  const handleReset = () => {
+    const resetParams = {
+      code: '',
+      name: '',
+      category: '',
+      status: undefined
+    };
+    setLocalSearchParams(resetParams);
+    setSearchParams(resetParams);
+    fetchProducts();
+  };
+
+  // 处理启用状态切换
+  const handleStatusChange = async (id: number, checked: boolean) => {
+    try {
+      await productService.updateProduct(id, { status: checked ? 1 : 0 });
+      console.log('状态更新成功');
+      fetchProducts();
+    } catch (error) {
+      console.error('状态更新失败');
+      console.error('Failed to update product status:', error);
+    }
+  };
+
+  const showCreateModal = () => {
+    setIsEditing(false);
+    setCurrentProduct(null);
+    setIsDrawerVisible(true);
+  };
+
+  const showEditModal = (product: Product) => {
+    setIsEditing(true);
+    setCurrentProduct(product);
+    setIsDrawerVisible(true);
+  };
+
+  const columns = [
+    {
+      title: '产品编码',
+      dataIndex: 'code',
+      key: 'code',
+      width: 120,
+      ellipsis: true,
+    },
+    {
+      title: '产品名称',
+      dataIndex: 'name',
+      key: 'name',
+      width: 180,
+      ellipsis: true,
+    },
+    {
+      title: '产品分类',
+      dataIndex: 'category',
+      key: 'category',
+      width: 120,
+      ellipsis: true,
+    },
+    {
+      title: '品牌',
+      dataIndex: 'brand',
+      key: 'brand',
+      width: 120,
+      ellipsis: true,
+    },
+    {
+      title: '单位',
+      dataIndex: 'unit',
+      key: 'unit',
+      width: 80,
+      ellipsis: true,
+    },
+    {
+      title: '启用状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: (status: number, record: Product) => (
+        <Switch 
+          checked={status === 1} 
+          onChange={(checked) => handleStatusChange(record.id, checked)} 
+        />
+      ),
+    },
+    {
+      title: '备注',
+      dataIndex: 'remark',
+      key: 'remark',
+      width: 200,
+      ellipsis: true,
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      width: 180,
+      render: (date: string) => formatDate(date),
+    },
+    {
+      title: '更新时间',
+      dataIndex: 'updatedAt',
+      key: 'updatedAt',
+      width: 180,
+      render: (date: string) => formatDate(date),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      render: (_: unknown, record: Product) => (
+        <Space size="middle">
+          <Button
+            type="link"
+            icon={<EditOutlined />}
+            onClick={() => showEditModal(record)}
+          >
+            编辑
+          </Button>
+          <Button
+            type="link"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => handleDelete(record.id)}
+          >
+            删除
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  // 过滤产品列表
+  const filteredProducts = products.filter(product => {
+    const matchesCode = !searchParams.code || product.code.includes(searchParams.code);
+    const matchesName = !searchParams.name || product.name.includes(searchParams.name);
+    const matchesCategory = !searchParams.category || product.category.includes(searchParams.category);
+    const matchesStatus = searchParams.status === undefined || product.status === searchParams.status;
+    return matchesCode && matchesName && matchesCategory && matchesStatus;
+  });
+
+  return (
+    <Spin spinning={loading} style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ padding: 0, width: '100%' }}>
+        {/* 标题行 */}
+        <div style={{ marginBottom: 16 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>产品管理</h2>
+        </div>
+        
+        {/* 查询区域 */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Input
+              placeholder="产品编号"
+              allowClear
+              size="middle"
+              style={{ width: 150 }}
+              value={localSearchParams.code}
+              onChange={(e) => setLocalSearchParams({ ...localSearchParams, code: e.target.value })}
+            />
+            <Input
+              placeholder="产品名称"
+              allowClear
+              size="middle"
+              style={{ width: 200 }}
+              value={localSearchParams.name}
+              onChange={(e) => setLocalSearchParams({ ...localSearchParams, name: e.target.value })}
+            />
+            <Select
+              placeholder="全部"
+              allowClear
+              size="middle"
+              style={{ width: 150 }}
+              value={localSearchParams.category}
+              onChange={(value) => setLocalSearchParams({ ...localSearchParams, category: value })}
+            >
+              {/* 这里可以根据实际情况添加分类选项 */}
+            </Select>
+            <Select
+              placeholder="启用状态"
+              allowClear
+              size="middle"
+              style={{ width: 120 }}
+              value={localSearchParams.status}
+              onChange={(value) => setLocalSearchParams({ ...localSearchParams, status: value })}
+            >
+              <Option value={1}>启用</Option>
+              <Option value={0}>禁用</Option>
+            </Select>
+            <Button type="primary" icon={<SearchOutlined />} onClick={handleSearch}>
+              搜索
+            </Button>
+            <Button onClick={handleReset}>
+              重置
+            </Button>
+          </div>
+        </div>
+        
+        {/* 操作按钮行 */}
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-start', gap: 12 }}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
+            新增产品
+          </Button>
+          <Button danger icon={<DeleteOutlined />} onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>
+            批量删除
+          </Button>
+        </div>
+        
+        <Table
+          columns={columns}
+          dataSource={filteredProducts}
+          rowKey="id"
+          loading={loading}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100'],
+            showTotal: (total) => `共 ${total} 条数据`,
+            showQuickJumper: true,
+            size: 'default',
+            locale: {
+              items_per_page: '/页',
+              jump_to: '跳到第',
+              jump_to_confirm: '页',
+              prev_page: '上一页',
+              next_page: '下一页',
+              page: '页',
+            },
+            onChange: (page, size) => {
+              setCurrentPage(page);
+              setPageSize(size);
+            },
+            onShowSizeChange: (current, size) => {
+              setCurrentPage(1);
+              setPageSize(size);
+            }
+          }}
+          scroll={{ x: 1200 }}
+          rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
+        />
+
+        <Drawer
+          title={isEditing ? '编辑产品' : '新增产品'}
+          placement="right"
+          onClose={() => setIsDrawerVisible(false)}
+          open={isDrawerVisible}
+          size="large"
+        >
+          <ProductForm
+            initialValues={currentProduct}
+            onSubmit={isEditing ? handleUpdate : handleCreate}
+            onCancel={() => setIsDrawerVisible(false)}
+            isEditing={isEditing}
+            visible={isDrawerVisible}
+          />
+        </Drawer>
+      </div>
+    </Spin>
+  );
+};
+
+export default ProductsPage;
