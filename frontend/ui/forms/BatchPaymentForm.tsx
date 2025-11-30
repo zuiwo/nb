@@ -1,0 +1,259 @@
+'use client';
+import React, { useState, useEffect } from 'react';
+import { Form, Input, Button, message, Select, DatePicker, InputNumber, Table, Space } from 'antd';
+import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
+import { CreatePaymentDto } from '../../lib/types/payment-types';
+import { Customer } from '../../lib/types/customer-types';
+
+const { Option } = Select;
+const { TextArea } = Input;
+
+interface BatchPaymentFormProps {
+  onSubmit: (values: { payments: CreatePaymentDto[] }) => Promise<void> | void;
+  onCancel?: () => void;
+  visible?: boolean;
+  customers: Customer[];
+}
+
+const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
+  onSubmit,
+  onCancel,
+  visible = false,
+  customers,
+}) => {
+  const [form] = Form.useForm();
+  const [loading, setLoading] = useState(false);
+  const [payments, setPayments] = useState<CreatePaymentDto[]>([
+    { paymentDate: new Date().toISOString().split('T')[0], customerId: 0, amount: 0, paymentMethod: '', account: '' }
+  ]);
+
+  // 监听visible变化，重新初始化表单
+  useEffect(() => {
+    if (visible) {
+      // 重置表单，默认添加一行
+      setPayments([
+        { paymentDate: new Date().toISOString().split('T')[0], customerId: 0, amount: 0, paymentMethod: '', account: '' }
+      ]);
+    }
+  }, [visible]);
+
+  // 添加一行
+  const addRow = () => {
+    setPayments([
+      ...payments,
+      { paymentDate: new Date().toISOString().split('T')[0], customerId: 0, amount: 0, paymentMethod: '', account: '' }
+    ]);
+  };
+
+  // 删除一行
+  const removeRow = (index: number) => {
+    if (payments.length <= 1) {
+      message.warning('至少保留一行');
+      return;
+    }
+    const newPayments = [...payments];
+    newPayments.splice(index, 1);
+    setPayments(newPayments);
+  };
+
+  // 更新行数据
+  const updateRow = (index: number, field: keyof CreatePaymentDto, value: any) => {
+    const newPayments = [...payments];
+    newPayments[index] = {
+      ...newPayments[index],
+      [field]: value
+    };
+    setPayments(newPayments);
+  };
+
+  const handleSubmit = async () => {
+    try {
+      // 验证所有行的数据
+      const valid = payments.every(payment => {
+        return (
+          payment.paymentDate &&
+          payment.customerId > 0 &&
+          payment.amount > 0 &&
+          payment.paymentMethod &&
+          payment.account
+        );
+      });
+
+      if (!valid) {
+        message.error('请填写所有必填字段');
+        return;
+      }
+
+      // 格式化日期为字符串
+      const formattedPayments = payments.map(payment => ({
+        ...payment,
+        paymentDate: payment.paymentDate.split('T')[0] // 确保日期格式正确
+      }));
+
+      await onSubmit({ payments: formattedPayments });
+    } catch (error) {
+      console.error('Submit failed:', error);
+      if (error instanceof Error) {
+        message.error(error.message || '提交失败，请重试');
+      } else {
+        message.error('提交失败，请重试');
+      }
+    }
+  };
+
+  // 表格列定义
+  const columns = [
+    {
+      title: '收款日期',
+      dataIndex: 'paymentDate',
+      key: 'paymentDate',
+      width: 150,
+      render: (_: any, __: any, index: number) => (
+        <DatePicker
+          style={{ width: '100%' }}
+          value={payments[index].paymentDate ? new Date(payments[index].paymentDate) : undefined}
+          onChange={(date) => updateRow(index, 'paymentDate', date ? date.format('YYYY-MM-DD') : '')}
+        />
+      ),
+    },
+    {
+      title: '客户名',
+      dataIndex: 'customerId',
+      key: 'customerId',
+      width: 180,
+      render: (_: any, __: any, index: number) => (
+        <Select
+          style={{ width: '100%' }}
+          placeholder="选择客户"
+          value={payments[index].customerId || undefined}
+          onChange={(value) => updateRow(index, 'customerId', value)}
+        >
+          {customers.map(customer => (
+            <Option key={customer.id} value={customer.id}>
+              {customer.code} {customer.name}
+            </Option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      title: '付款金额',
+      dataIndex: 'amount',
+      key: 'amount',
+      width: 120,
+      render: (_: any, __: any, index: number) => (
+        <InputNumber
+          style={{ width: '100%' }}
+          placeholder="输入金额"
+          min={0.01}
+          step={0.01}
+          value={payments[index].amount}
+          onChange={(value) => updateRow(index, 'amount', value || 0)}
+          formatter={(value) => `¥ ${value}`}
+          parser={(value) => parseFloat(value?.replace(/¥\s?/, '') || '0')}
+        />
+      ),
+    },
+    {
+      title: '付款方式',
+      dataIndex: 'paymentMethod',
+      key: 'paymentMethod',
+      width: 120,
+      render: (_: any, __: any, index: number) => (
+        <Input
+          placeholder="付款方式"
+          value={payments[index].paymentMethod}
+          onChange={(e) => updateRow(index, 'paymentMethod', e.target.value)}
+        />
+      ),
+    },
+    {
+      title: '收款账户',
+      dataIndex: 'account',
+      key: 'account',
+      width: 120,
+      render: (_: any, __: any, index: number) => (
+        <Input
+          placeholder="收款账户"
+          value={payments[index].account}
+          onChange={(e) => updateRow(index, 'account', e.target.value)}
+        />
+      ),
+    },
+    {
+      title: '付款公司',
+      dataIndex: 'payerCompany',
+      key: 'payerCompany',
+      width: 150,
+      render: (_: any, __: any, index: number) => (
+        <Input
+          placeholder="付款公司"
+          value={payments[index].payerCompany || ''}
+          onChange={(e) => updateRow(index, 'payerCompany', e.target.value)}
+        />
+      ),
+    },
+    {
+      title: '备注',
+      dataIndex: 'remark',
+      key: 'remark',
+      width: 150,
+      render: (_: any, __: any, index: number) => (
+        <Input.TextArea
+          rows={1}
+          placeholder="备注"
+          value={payments[index].remark || ''}
+          onChange={(e) => updateRow(index, 'remark', e.target.value)}
+        />
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 80,
+      render: (_: any, __: any, index: number) => (
+        <Space size="middle">
+          <Button
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={() => removeRow(index)}
+          >
+            删除
+          </Button>
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <div>
+      <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+        <Button type="dashed" icon={<PlusOutlined />} onClick={addRow}>
+          添加行
+        </Button>
+      </div>
+
+      <Table
+        columns={columns}
+        dataSource={payments.map((_, index) => ({ ..._, key: index }))}
+        pagination={false}
+        scroll={{ x: 1000 }}
+        bordered
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+        <Button type="primary" onClick={handleSubmit} style={{ marginRight: 8 }}>
+          批量创建
+        </Button>
+        {onCancel && (
+          <Button onClick={onCancel}>
+            取消
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default BatchPaymentForm;

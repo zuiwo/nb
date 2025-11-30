@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, App } from "antd";
+import { AntdRegistry } from '@ant-design/nextjs-registry';
 import AppLayout from "./components/AppLayout";
 
 export const metadata: Metadata = {
@@ -16,15 +17,20 @@ export default function RootLayout({
   return (
     <html lang="zh-CN">
       <body style={{ margin: 0, background: '#f0f2f5' }}>
-        <ConfigProvider
-          theme={{
-            token: {
-              colorPrimary: '#1890ff',
-            },
-          }}
-        >
-          <AppLayout>{children}</AppLayout>
-        </ConfigProvider>
+        {/* 使用AntdRegistry优化Ant Design样式加载，避免页面闪烁 */}
+        <AntdRegistry>
+          <ConfigProvider
+            theme={{
+              token: {
+                colorPrimary: '#1890ff',
+              },
+            }}
+          >
+            <App>
+              <AppLayout>{children}</AppLayout>
+            </App>
+          </ConfigProvider>
+        </AntdRegistry>
       </body>
     </html>
   );

@@ -1,8 +1,14 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, Switch, InputNumber, message } from 'antd';
+import { Form, Input, Button, Switch, InputNumber, message, Select } from 'antd';
 import { CreateProductDto, UpdateProductDto } from '../../lib/types/product-types';
 import { productService } from '../../lib/services/productService';
+import { settingService } from '../../lib/services/settingService';
+import { dictionaryService } from '../../lib/services/dictionaryService';
+import { Setting } from '../../lib/types/setting-types';
+import { DictionaryItem } from '../../lib/types/dictionary-types';
+
+const { Option } = Select;
 
 interface ProductFormProps {
   initialValues?: Partial<CreateProductDto & { id?: number }> | null;
@@ -20,6 +26,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
   visible = false,
 }) => {
   const [form] = Form.useForm();
+  const [settings, setSettings] = useState<Setting[]>([]);
+  const [categoryOptions, setCategoryOptions] = useState<DictionaryItem[]>([]);
+  const [brandOptions, setBrandOptions] = useState<DictionaryItem[]>([]);
+  const [unitOptions, setUnitOptions] = useState<DictionaryItem[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // 生成产品编号
   const generateProductCode = async () => {
@@ -32,9 +43,43 @@ const ProductForm: React.FC<ProductFormProps> = ({
     }
   };
 
+  // 加载设置和字典数据
+  const loadDictData = async () => {
+    try {
+      setLoading(true);
+      const settingsData = await settingService.getSettings();
+      setSettings(settingsData);
+      
+      // 获取字典映射关系
+      const categoryDictCode = settingsData.find(s => s.key === 'product_category_dict')?.value || '';
+      const brandDictCode = settingsData.find(s => s.key === 'product_brand_dict')?.value || '';
+      const unitDictCode = settingsData.find(s => s.key === 'product_unit_dict')?.value || '';
+      
+      // 并行获取字典项
+      const [categoryItems, brandItems, unitItems] = await Promise.all([
+        dictionaryService.getDictionaryItems(categoryDictCode),
+        dictionaryService.getDictionaryItems(brandDictCode),
+        dictionaryService.getDictionaryItems(unitDictCode)
+      ]);
+      
+      // 过滤掉禁用状态的字典项，只保留启用状态的字典项
+      setCategoryOptions(categoryItems.filter(item => item.status === 1));
+      setBrandOptions(brandItems.filter(item => item.status === 1));
+      setUnitOptions(unitItems.filter(item => item.status === 1));
+      
+    } catch (error) {
+      console.error('Failed to load dictionary data:', error);
+      message.error('加载字典数据失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 监听visible变化，重新初始化表单
   useEffect(() => {
     if (visible) {
+      loadDictData();
+      
       if (isEditing && initialValues) {
         // 编辑模式：直接使用initialValues
         form.setFieldsValue({
@@ -112,29 +157,39 @@ const ProductForm: React.FC<ProductFormProps> = ({
           name="category"
           label="产品分类"
         >
-          <Input placeholder="请输入产品分类（可选）" />
+          <Select placeholder="请选择产品分类（可选）" loading={loading}>
+            {categoryOptions.map(item => (
+              <Option key={item.code} value={item.code}>
+                {item.name}
+              </Option>
+            ))}
+          </Select>
         </Form.Item>
 
         <Form.Item
           name="brand"
           label="品牌"
         >
-          <Input placeholder="请输入品牌（可选）" />
+          <Select placeholder="请选择品牌（可选）" loading={loading}>
+            {brandOptions.map(item => (
+              <Option key={item.code} value={item.code}>
+                {item.name}
+              </Option>
+            ))}
+          </Select>
         </Form.Item>
 
         <Form.Item
           name="unit"
           label="单位"
         >
-          <Input placeholder="请输入单位（可选）" />
-        </Form.Item>
-
-        <Form.Item
-          name="status"
-          label="启用状态"
-          valuePropName="checked"
-        >
-          <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+          <Select placeholder="请选择单位（可选）" loading={loading}>
+            {unitOptions.map(item => (
+              <Option key={item.code} value={item.code}>
+                {item.name}
+              </Option>
+            ))}
+          </Select>
         </Form.Item>
       </div>
 
@@ -143,6 +198,14 @@ const ProductForm: React.FC<ProductFormProps> = ({
         label="备注"
       >
         <Input.TextArea rows={4} placeholder="请输入备注" />
+      </Form.Item>
+
+      <Form.Item
+        name="status"
+        label="启用状态"
+        valuePropName="checked"
+      >
+        <Switch checkedChildren="启用" unCheckedChildren="禁用" />
       </Form.Item>
 
       <Form.Item style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '24px' }}>

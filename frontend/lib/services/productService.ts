@@ -8,7 +8,9 @@ export const productService = {
     if (!response.ok) {
       throw new Error('Failed to fetch products');
     }
-    return response.json();
+    const data = await response.json();
+    // 确保返回的数据是数组
+    return Array.isArray(data) ? data : [];
   },
 
   async getProductById(id: number): Promise<Product> {

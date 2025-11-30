@@ -1,20 +1,21 @@
 'use client';
-import { useState } from "react";
-import { Layout, Menu } from "antd";
-import { 
-  MenuFoldOutlined, 
-  MenuUnfoldOutlined, 
-  ShoppingOutlined, 
-  ShoppingCartOutlined, 
-  StockOutlined, 
-  FileTextOutlined, 
-  UserOutlined, 
-  ProductOutlined, 
+import { useState, Suspense, useEffect } from "react";
+import { Layout, Menu, Skeleton } from "antd";
+import {
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  ShoppingOutlined,
+  ShoppingCartOutlined,
+  StockOutlined,
+  FileTextOutlined,
+  UserOutlined,
+  ProductOutlined,
   SettingOutlined,
   DatabaseOutlined,
   BookOutlined
 } from "@ant-design/icons";
 import Link from "next/link";
+import { usePathname } from 'next/navigation';
 
 const { Header, Sider, Content } = Layout;
 
@@ -22,11 +23,55 @@ interface AppLayoutProps {
   children: React.ReactNode;
 }
 
+// 内容区域的骨架屏组件
+const ContentSkeleton = () => {
+  return (
+    <div style={{ padding: '24px 0' }}>
+      <Skeleton active paragraph={{ rows: 10 }} title />
+    </div>
+  );
+};
+
 const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>(['sales']);
+  const [openKeys, setOpenKeys] = useState<string[]>([]);
+  const pathname = usePathname();
+
+  // 根据当前路由设置选中的菜单
+  useEffect(() => {
+    let newSelectedKeys: string[] = ['sales'];
+    let newOpenKeys: string[] = [];
+
+    if (pathname.startsWith('/basic-info/products')) {
+      newSelectedKeys = ['products'];
+      newOpenKeys = ['basic-info'];
+    } else if (pathname.startsWith('/basic-info/customers')) {
+      newSelectedKeys = ['customers'];
+      newOpenKeys = ['basic-info'];
+    } else if (pathname.startsWith('/settings/system')) {
+      newSelectedKeys = ['system'];
+      newOpenKeys = ['settings'];
+    } else if (pathname.startsWith('/settings/dictionary')) {
+      newSelectedKeys = ['dictionary'];
+      newOpenKeys = ['settings'];
+    } else if (pathname.startsWith('/sales')) {
+      newSelectedKeys = ['sales'];
+    } else if (pathname.startsWith('/purchase')) {
+      newSelectedKeys = ['purchase'];
+    } else if (pathname.startsWith('/inventory')) {
+      newSelectedKeys = ['inventory'];
+    } else if (pathname.startsWith('/bills')) {
+      newSelectedKeys = ['bills'];
+    }
+
+    setSelectedKeys(newSelectedKeys);
+    setOpenKeys(newOpenKeys);
+  }, [pathname]);
 
   return (
     <Layout style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* 顶部导航栏 */}
       <Header style={{ 
         padding: 0, 
         background: '#fff', 
@@ -39,7 +84,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
         top: 0,
         left: 0,
         right: 0,
-        zIndex: 1000,
+        zIndex: 1000
       }}>
         <div style={{ 
           display: 'flex', 
@@ -57,7 +102,10 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
           {/* 顶部右侧内容，如用户信息等，暂时为空 */}
         </div>
       </Header>
+      
+      {/* 主体内容区域 */}
       <Layout style={{ flex: 1, marginTop: '64px', display: 'flex' }}>
+        {/* 侧边栏 */}
         <Sider 
           trigger={null} 
           collapsible 
@@ -70,7 +118,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             left: 0,
             top: '64px',
             bottom: 0,
-            zIndex: 999,
+            zIndex: 999
           }}
         >
           <div style={{ 
@@ -83,7 +131,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               <Menu
                 theme="light"
                 mode="inline"
-                defaultSelectedKeys={['sales']}
+                selectedKeys={selectedKeys}
+                openKeys={openKeys}
+                onOpenChange={setOpenKeys}
                 style={{ borderRight: 0, height: '100%' }}
                 items={[
                   {
@@ -171,6 +221,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
             </div>
           </div>
         </Sider>
+        
+        {/* 主内容区域 */}
         <Layout style={{ marginLeft: collapsed ? '80px' : '200px', flex: 1 }}>
           <Content
             style={{
@@ -179,10 +231,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
               minHeight: 280,
               background: '#fff',
               borderRadius: 8,
-              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+              boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
             }}
           >
-            {children}
+            {/* 使用Suspense包裹内容，实现加载状态 */}
+            <Suspense fallback={<ContentSkeleton />}>
+              {children}
+            </Suspense>
           </Content>
         </Layout>
       </Layout>

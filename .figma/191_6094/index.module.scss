@@ -1,0 +1,152 @@
+* {
+  box-sizing: border-box;
+}
+
+.drawer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  background: var(--Gray-White, #ffffff);
+  width: 600px;
+  height: 400px;
+  overflow: hidden;
+
+  .aItemDrawerHeader {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    justify-content: space-between;
+    border-width: 0px 0px 1px;
+    border-style: solid;
+    border-color: var(--Gray-Gray3-, #e7e7e7);
+    background: var(--Gray-White, #ffffff);
+    padding: 16px 16px 15px;
+    min-width: 600px;
+    height: 56px;
+
+    .title {
+      line-height: 24px;
+      letter-spacing: 0;
+      color: var(--Text-Icon-Font-Gy1-90--primary, #000000e5);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .itemCloseBtn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      column-gap: 8px;
+      border-radius: 3px;
+      padding: 2px;
+
+      .frame {
+        flex-shrink: 0;
+        width: 16px;
+        height: 16px;
+      }
+    }
+  }
+
+  .itemFormTop {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    align-self: stretch;
+    margin: 25px 268px 0px 32px;
+    padding-bottom: 24px;
+
+    .title2 {
+      flex-shrink: 0;
+      align-self: stretch;
+      padding: 0px 0px 8px;
+      line-height: 22px;
+      letter-spacing: 0;
+      color: var(--Text-Icon-Font-Gy1-90--primary, #000000e5);
+      font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+      font-size: 14px;
+    }
+
+    .instance {
+      display: flex;
+      flex-shrink: 0;
+      align-items: center;
+      align-self: stretch;
+      column-gap: 8px;
+      border: 1px solid var(--Gray-Gray4-, #dcdcdc);
+      border-radius: 3px;
+      background: var(--Gray-White, #ffffff);
+      padding: 4px 7px;
+      overflow: hidden;
+
+      .placeholder {
+        flex-grow: 1;
+        height: 22px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 22px;
+        letter-spacing: 0;
+        white-space: nowrap;
+        color: var(--Text-Icon-Font-Gy1-90--primary, #000000e5);
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+        font-size: 14px;
+      }
+    }
+  }
+
+  .btnGroup {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    column-gap: 8px;
+    margin-top: 177px;
+    border-width: 1px 0px 0px;
+    border-style: solid;
+    border-color: var(--Gray-Gray3-, #e7e7e7);
+    background: var(--Gray-White, #ffffff);
+    padding: 11px 16px 12px 0px;
+    width: 600px;
+
+    .button {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      column-gap: 10px;
+      border-radius: 3px;
+      background: var(--Brand-Brand7-Normal, #0052d9);
+      padding: 5px 16px;
+
+      .text {
+        flex-shrink: 0;
+        line-height: 22px;
+        letter-spacing: 0;
+        color: var(--Text-Icon-Font-Wh1-90--anti, #ffffffe5);
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+        font-size: 14px;
+      }
+    }
+
+    .button2 {
+      display: inline-flex;
+      flex-shrink: 0;
+      align-items: center;
+      justify-content: center;
+      column-gap: 8px;
+      border-radius: 3px;
+      background: var(--Gray-Gray3-, #e7e7e7);
+      padding: 5px 16px;
+      overflow: hidden;
+
+      .text2 {
+        flex-shrink: 0;
+        line-height: 22px;
+        letter-spacing: 0;
+        color: var(--Text-Icon-Font-Gy1-90--primary, #000000e5);
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", SimHei, Arial, Helvetica, sans-serif;
+        font-size: 14px;
+      }
+    }
+  }
+}

@@ -4,7 +4,11 @@ import { Table, Button, Drawer, message, Input, Select, Space, Card, Spin, Switc
 import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
 import ProductForm from '@/ui/forms/ProductForm';
 import { productService } from '@/lib/services/productService';
+import { settingService } from '@/lib/services/settingService';
+import { dictionaryService } from '@/lib/services/dictionaryService';
 import { Product, CreateProductDto, UpdateProductDto } from '@/lib/types/product-types';
+import { Setting } from '@/lib/types/setting-types';
+import { DictionaryItem } from '@/lib/types/dictionary-types';
 import { formatPrice, formatDate } from '@/lib/utils/format';
 
 const { Option } = Select;
@@ -31,18 +35,60 @@ const ProductsPage = () => {
     category: '',
     status: undefined as number | undefined
   });
+  const [categoryOptions, setCategoryOptions] = useState<DictionaryItem[]>([]);
+  const [brandOptions, setBrandOptions] = useState<DictionaryItem[]>([]);
+  const [unitOptions, setUnitOptions] = useState<DictionaryItem[]>([]);
+  const [settings, setSettings] = useState<Setting[]>([]);
 
+  // 加载产品和字典数据
   useEffect(() => {
-    fetchProducts();
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [productsData, settingsData] = await Promise.all([
+          productService.getProducts(),
+          settingService.getSettings()
+        ]);
+        setProducts(Array.isArray(productsData) ? productsData : []);
+        setSettings(settingsData);
+        
+        // 获取字典映射关系
+        const categoryDictCode = settingsData.find(s => s.key === 'product_category_dict')?.value || '';
+        const brandDictCode = settingsData.find(s => s.key === 'product_brand_dict')?.value || '';
+        const unitDictCode = settingsData.find(s => s.key === 'product_unit_dict')?.value || '';
+        
+        // 并行获取字典项
+        const [categoryItems, brandItems, unitItems] = await Promise.all([
+          dictionaryService.getDictionaryItems(categoryDictCode),
+          dictionaryService.getDictionaryItems(brandDictCode),
+          dictionaryService.getDictionaryItems(unitDictCode)
+        ]);
+        
+        // 过滤掉禁用状态的字典项，只保留启用状态的字典项
+        setCategoryOptions(categoryItems.filter(item => item.status === 1));
+        setBrandOptions(brandItems.filter(item => item.status === 1));
+        setUnitOptions(unitItems.filter(item => item.status === 1));
+        
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
   }, []);
 
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const data = await productService.getProducts();
-      setProducts(data);
+      // 确保products始终是数组，防止null导致的filter错误
+      setProducts(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('获取产品列表失败:', error);
+      // 发生错误时，将products设置为空数组
+      setProducts([]);
     } finally {
       setLoading(false);
     }
@@ -152,6 +198,15 @@ const ProductsPage = () => {
     setIsDrawerVisible(true);
   };
 
+  // 创建字典项映射，用于将编号转换为名称
+  const createDictItemMap = (items: DictionaryItem[]) => {
+    const map: Record<string, string> = {};
+    items.forEach(item => {
+      map[item.code] = item.name;
+    });
+    return map;
+  };
+
   const columns = [
     {
       title: '产品编码',
@@ -173,6 +228,10 @@ const ProductsPage = () => {
       key: 'category',
       width: 120,
       ellipsis: true,
+      render: (category: string) => {
+        const categoryMap = createDictItemMap(categoryOptions);
+        return categoryMap[category] || category;
+      },
     },
     {
       title: '品牌',
@@ -180,12 +239,27 @@ const ProductsPage = () => {
       key: 'brand',
       width: 120,
       ellipsis: true,
+      render: (brand: string) => {
+        const brandMap = createDictItemMap(brandOptions);
+        return brandMap[brand] || brand;
+      },
     },
     {
       title: '单位',
       dataIndex: 'unit',
       key: 'unit',
       width: 80,
+      ellipsis: true,
+      render: (unit: string) => {
+        const unitMap = createDictItemMap(unitOptions);
+        return unitMap[unit] || unit;
+      },
+    },
+    {
+      title: '备注',
+      dataIndex: 'remark',
+      key: 'remark',
+      width: 200,
       ellipsis: true,
     },
     {
@@ -199,27 +273,6 @@ const ProductsPage = () => {
           onChange={(checked) => handleStatusChange(record.id, checked)} 
         />
       ),
-    },
-    {
-      title: '备注',
-      dataIndex: 'remark',
-      key: 'remark',
-      width: 200,
-      ellipsis: true,
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      width: 180,
-      render: (date: string) => formatDate(date),
-    },
-    {
-      title: '更新时间',
-      dataIndex: 'updatedAt',
-      key: 'updatedAt',
-      width: 180,
-      render: (date: string) => formatDate(date),
     },
     {
       title: '操作',
@@ -291,7 +344,11 @@ const ProductsPage = () => {
               value={localSearchParams.category}
               onChange={(value) => setLocalSearchParams({ ...localSearchParams, category: value })}
             >
-              {/* 这里可以根据实际情况添加分类选项 */}
+              {categoryOptions.map(item => (
+                <Option key={item.code} value={item.code}>
+                  {item.name}
+                </Option>
+              ))}
             </Select>
             <Select
               placeholder="启用状态"
