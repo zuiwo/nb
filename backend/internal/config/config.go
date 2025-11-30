@@ -30,6 +30,7 @@ func LoadConfig() *Config {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("../")
 	viper.AddConfigPath("../../")
+	viper.AddConfigPath("../../../") // 添加项目根目录作为配置路径
 	viper.AutomaticEnv()
 
 	// 设置默认值

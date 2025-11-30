@@ -1,0 +1,40 @@
+# 依赖目录
+node_modules/
+go.sum
+
+# 构建产物
+build/
+dist/
+*.exe
+*.out
+
+# 配置文件
+.env
+.env.local
+.env.*.local
+
+# IDE配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 日志文件
+logs/
+*.log
+
+# 数据库文件
+*.db
+*.sqlite
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+coverage/
+*.lcov
+
+# 其他
+.trae/
