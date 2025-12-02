@@ -9,11 +9,11 @@ import {
   Form,
   Select,
   Switch,
-  message,
   Space,
   Card,
   Row,
-  Col
+  Col,
+  App
 } from 'antd';
 import {
   PlusOutlined,
@@ -34,6 +34,7 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 
 const DictionaryManagementPage = () => {
+  const { message } = App.useApp();
   // 状态管理
   const [dictTypes, setDictTypes] = useState<DictionaryType[]>([]);
   const [dictItems, setDictItems] = useState<DictionaryItem[]>([]);

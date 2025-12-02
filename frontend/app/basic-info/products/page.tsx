@@ -212,21 +212,21 @@ const ProductsPage = () => {
       title: '产品编码',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: '10%',
       ellipsis: true,
     },
     {
       title: '产品名称',
       dataIndex: 'name',
       key: 'name',
-      width: 180,
+      width: '20%',
       ellipsis: true,
     },
     {
       title: '产品分类',
       dataIndex: 'category',
       key: 'category',
-      width: 120,
+      width: '15%',
       ellipsis: true,
       render: (category: string) => {
         const categoryMap = createDictItemMap(categoryOptions);
@@ -237,7 +237,7 @@ const ProductsPage = () => {
       title: '品牌',
       dataIndex: 'brand',
       key: 'brand',
-      width: 120,
+      width: '15%',
       ellipsis: true,
       render: (brand: string) => {
         const brandMap = createDictItemMap(brandOptions);
@@ -248,7 +248,7 @@ const ProductsPage = () => {
       title: '单位',
       dataIndex: 'unit',
       key: 'unit',
-      width: 80,
+      width: '10%',
       ellipsis: true,
       render: (unit: string) => {
         const unitMap = createDictItemMap(unitOptions);
@@ -259,14 +259,14 @@ const ProductsPage = () => {
       title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 200,
+      width: '10%',
       ellipsis: true,
     },
     {
       title: '启用状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: '5%',
       render: (status: number, record: Product) => (
         <Switch 
           checked={status === 1} 
@@ -278,12 +278,15 @@ const ProductsPage = () => {
       title: '操作',
       key: 'action',
       width: 120,
+      fixed: 'right',
+      align: 'center',
       render: (_: unknown, record: Product) => (
-        <Space size="middle">
+        <Space size="small" style={{ justifyContent: 'center' }}>
           <Button
             type="link"
             icon={<EditOutlined />}
             onClick={() => showEditModal(record)}
+            size="small"
           >
             编辑
           </Button>
@@ -292,6 +295,7 @@ const ProductsPage = () => {
             danger
             icon={<DeleteOutlined />}
             onClick={() => handleDelete(record.id)}
+            size="small"
           >
             删除
           </Button>
@@ -311,7 +315,7 @@ const ProductsPage = () => {
 
   return (
     <Spin spinning={loading} style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ padding: 0, width: '100%' }}>
+      <div style={{ padding: 0, width: '100%', overflowX: 'hidden' }}>
         {/* 标题行 */}
         <div style={{ marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>产品管理</h2>
@@ -385,6 +389,7 @@ const ProductsPage = () => {
           dataSource={filteredProducts}
           rowKey="id"
           loading={loading}
+          scroll={{ x: '100%' }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
@@ -410,7 +415,6 @@ const ProductsPage = () => {
               setPageSize(size);
             }
           }}
-          scroll={{ x: 1200 }}
           rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
         />
 

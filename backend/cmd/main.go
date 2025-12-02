@@ -275,29 +275,29 @@ func main() {
 	}
 
 	// 字典路由组
-  dictionaries := r.Group("/api/dictionaries")
-  {
-    // 字典类型管理
-    dictionaries.GET("/types", getDictionaryTypes)
-    dictionaries.GET("/types/:id", getDictionaryTypeByID)
-    dictionaries.POST("/types", createDictionaryType)
-    dictionaries.PUT("/types/:id", updateDictionaryType)
-    dictionaries.DELETE("/types/:id", deleteDictionaryType)
-    dictionaries.DELETE("/types/batch", batchDeleteDictionaryTypes)
-    
-    // 字典项管理
-    dictionaries.GET("/items", getDictionaryItems)
-    dictionaries.GET("/items/:id", getDictionaryItemByID)
-    dictionaries.POST("/items", createDictionaryItem)
-    dictionaries.PUT("/items/:id", updateDictionaryItem)
-    dictionaries.DELETE("/items/:id", deleteDictionaryItem)
-    dictionaries.DELETE("/items/batch", batchDeleteDictionaryItems)
-    
-    // 根据字典类型获取字典项
-    dictionaries.GET("/items/type/:code", getDictionaryItemsByTypeCode)
-  }
-  
-  // 设置路由组
+	dictionaries := r.Group("/api/dictionaries")
+	{
+		// 字典类型管理
+		dictionaries.GET("/types", getDictionaryTypes)
+		dictionaries.GET("/types/:id", getDictionaryTypeByID)
+		dictionaries.POST("/types", createDictionaryType)
+		dictionaries.PUT("/types/:id", updateDictionaryType)
+		dictionaries.DELETE("/types/:id", deleteDictionaryType)
+		dictionaries.DELETE("/types/batch", batchDeleteDictionaryTypes)
+
+		// 字典项管理
+		dictionaries.GET("/items", getDictionaryItems)
+		dictionaries.GET("/items/:id", getDictionaryItemByID)
+		dictionaries.POST("/items", createDictionaryItem)
+		dictionaries.PUT("/items/:id", updateDictionaryItem)
+		dictionaries.DELETE("/items/:id", deleteDictionaryItem)
+		dictionaries.DELETE("/items/batch", batchDeleteDictionaryItems)
+
+		// 根据字典类型获取字典项
+		dictionaries.GET("/items/type/:code", getDictionaryItemsByTypeCode)
+	}
+
+	// 设置路由组
 	settings := r.Group("/api/settings")
 	{
 		settings.GET("", getSettings)
@@ -307,12 +307,17 @@ func main() {
 	// 客户路由组
 	customers := r.Group("/api/customers")
 	{
+		// 基本客户路由
 		customers.GET("", getCustomers)
-		customers.GET("/:id", getCustomerByID)
 		customers.POST("", createCustomer)
+		customers.DELETE("/batch", batchDeleteCustomers)
+		// 客户编号生成和检查（放在动态路由之前）
+		customers.GET("/generate-code", generateCustomerCodeAPI)
+		customers.GET("/check-code", checkCustomerCode)
+		// 动态路由（放在具体路由之后）
+		customers.GET("/:id", getCustomerByID)
 		customers.PUT("/:id", updateCustomer)
 		customers.DELETE("/:id", deleteCustomer)
-		customers.DELETE("/batch", batchDeleteCustomers)
 		// 客户发票路由
 		customers.GET("/:id/invoices", getCustomerInvoices)
 	}
@@ -476,6 +481,7 @@ func createProduct(c *gin.Context) {
 
 	// 设置默认状态为1（启用）
 	status := req.Status
+	// 确保新建客户默认状态为启用
 	if status == 0 {
 		status = 1
 	}
@@ -672,6 +678,49 @@ func checkProductCode(c *gin.Context) {
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check product code"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"isUnique": !exists})
+}
+
+// generateCustomerCodeAPI 生成客户编号API
+func generateCustomerCodeAPI(c *gin.Context) {
+	code, err := generateCustomerCode(database.DB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate customer code"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code})
+}
+
+// checkCustomerCode 检查客户编号是否唯一
+func checkCustomerCode(c *gin.Context) {
+	code := c.Query("code")
+	idStr := c.Query("id")
+
+	if code == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Customer code is required"})
+		return
+	}
+
+	var exists bool
+	var err error
+	if idStr == "" {
+		// 新增客户时，检查所有客户
+		err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM customers WHERE code = ?)", code).Scan(&exists)
+	} else {
+		// 编辑客户时，排除当前客户
+		id, err := strconv.Atoi(idStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid customer ID"})
+			return
+		}
+		err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM customers WHERE code = ? AND id != ?)", code, id).Scan(&exists)
+	}
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check customer code"})
 		return
 	}
 
@@ -1036,7 +1085,7 @@ func getDictionaryItemByID(c *gin.Context) {
 func generateDictItemCode(db *sql.DB, dictTypeCode string) (string, error) {
 	// 获取当前字典类型下最大的字典项编码
 	var maxCode sql.NullString
-	err := db.QueryRow("SELECT MAX(code) FROM dictionary_items WHERE dict_type_code = ? AND code REGEXP '^" + dictTypeCode + "[0-9]+$'", dictTypeCode).Scan(&maxCode)
+	err := db.QueryRow("SELECT MAX(code) FROM dictionary_items WHERE dict_type_code = ? AND code REGEXP '^"+dictTypeCode+"[0-9]+$'", dictTypeCode).Scan(&maxCode)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
@@ -1087,6 +1136,7 @@ func createDictionaryItem(c *gin.Context) {
 
 	// 设置默认状态为1（启用）
 	status := req.Status
+	// 确保新建客户默认状态为启用
 	if status == 0 {
 		status = 1
 	}
@@ -1324,11 +1374,14 @@ func updateSettings(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
-	// 更新每个设置
+	// 更新或插入每个设置，使用INSERT ... ON DUPLICATE KEY UPDATE避免重复键冲突
 	for _, setting := range req.Settings {
 		_, err := tx.Exec(
-			"UPDATE settings SET value = ?, description = ? WHERE `key` = ?",
-			setting.Value, setting.Description, setting.Key,
+			"INSERT INTO settings (`key`, value, description, created_at, updated_at) "+
+				"VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) "+
+				"ON DUPLICATE KEY UPDATE "+
+				"value = VALUES(value), description = VALUES(description), updated_at = CURRENT_TIMESTAMP",
+			setting.Key, setting.Value, setting.Description,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update setting: " + err.Error()})
@@ -1352,29 +1405,29 @@ func updateSettings(c *gin.Context) {
 func generateCustomerCode(db *sql.DB) (string, error) {
 	// 获取当前最大的客户编号
 	var maxCode sql.NullString
-	err := db.QueryRow("SELECT MAX(code) FROM customers WHERE code REGEXP '^D[0-9]+$'").Scan(&maxCode)
+	err := db.QueryRow("SELECT MAX(code) FROM customers WHERE code REGEXP '^C[0-9]+$'").Scan(&maxCode)
 	if err != nil && err != sql.ErrNoRows {
 		return "", err
 	}
 
 	var nextNum int
 	if !maxCode.Valid || maxCode.String == "" {
-		// 系统无客户时，生成D0001
+		// 系统无客户时，生成C0001
 		nextNum = 1
 	} else {
 		// 提取数字部分并递增
 		numPart := maxCode.String[1:]
 		currentNum, err := strconv.Atoi(numPart)
 		if err != nil {
-			// 格式错误时，从D0001开始
+			// 格式错误时，从C0001开始
 			nextNum = 1
 		} else {
 			nextNum = currentNum + 1
 		}
 	}
 
-	// 生成新编号，始终使用D+4位数字格式
-	newCode := fmt.Sprintf("D%04d", nextNum)
+	// 生成新编号，始终使用C+4位数字格式
+	newCode := fmt.Sprintf("C%04d", nextNum)
 	return newCode, nil
 }
 
@@ -2013,9 +2066,41 @@ func batchCreatePayments(c *gin.Context) {
 	}
 	defer tx.Rollback()
 
+	// 预生成所有收款编号，确保唯一性
+	var paymentCodes []string
+	// 获取当前最大的收款编号
+	var maxCode sql.NullString
+	err = tx.QueryRow("SELECT MAX(code) FROM payments WHERE code REGEXP '^D[0-9]+$'").Scan(&maxCode)
+	if err != nil && err != sql.ErrNoRows {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get max payment code"})
+		return
+	}
+
+	var nextNum int
+	if !maxCode.Valid || maxCode.String == "" {
+		// 系统无收款记录时，从D000001开始
+		nextNum = 1
+	} else {
+		// 提取数字部分并递增
+		numPart := maxCode.String[1:]
+		currentNum, err := strconv.Atoi(numPart)
+		if err != nil {
+			// 格式错误时，从D000001开始
+			nextNum = 1
+		} else {
+			nextNum = currentNum + 1
+		}
+	}
+
+	// 生成所有需要的编号
+	for i := 0; i < len(req.Payments); i++ {
+		newCode := fmt.Sprintf("D%06d", nextNum+i)
+		paymentCodes = append(paymentCodes, newCode)
+	}
+
 	// 批量插入收款记录
 	var payments []Payment
-	for _, paymentReq := range req.Payments {
+	for i, paymentReq := range req.Payments {
 		// 检查客户是否存在
 		var customerExists bool
 		err := tx.QueryRow("SELECT EXISTS(SELECT 1 FROM customers WHERE id = ?)", paymentReq.CustomerID).Scan(&customerExists)
@@ -2028,12 +2113,8 @@ func batchCreatePayments(c *gin.Context) {
 			return
 		}
 
-		// 生成收款编号
-		paymentCode, err := generatePaymentCode(database.DB)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate payment code"})
-			return
-		}
+		// 使用预生成的编号
+		paymentCode := paymentCodes[i]
 
 		// 插入收款记录
 		result, err := tx.Exec(

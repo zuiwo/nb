@@ -167,35 +167,35 @@ const CustomersPage = () => {
       title: '客户编号',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: '8%',
       ellipsis: true,
     },
     {
       title: '客户姓名',
       dataIndex: 'name',
       key: 'name',
-      width: 150,
+      width: '10%',
       ellipsis: true,
     },
     {
       title: '公司名',
       dataIndex: 'company',
       key: 'company',
-      width: 200,
+      width: '15%',
       ellipsis: true,
     },
     {
       title: '手机号',
       dataIndex: 'phone',
       key: 'phone',
-      width: 150,
+      width: '12%',
       ellipsis: true,
     },
     {
       title: '地址',
       dataIndex: 'address',
       key: 'address',
-      width: 250,
+      width: '20%',
       ellipsis: true,
       render: (address: string, record: Customer) => {
         return `${record.province}${record.city}${record.district}${address}`;
@@ -205,14 +205,15 @@ const CustomersPage = () => {
       title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 200,
+      width: '10%',
       ellipsis: true,
     },
     {
       title: '启用状态',
       dataIndex: 'status',
       key: 'status',
-      width: 100,
+      width: '8%',
+      ellipsis: true,
       render: (status: number, record: Customer) => (
         <Switch 
           checked={status === 1} 
@@ -224,12 +225,15 @@ const CustomersPage = () => {
       title: '操作',
       key: 'action',
       width: 120,
+      fixed: 'right',
+      align: 'center',
       render: (_: unknown, record: Customer) => (
-        <Space size="middle">
+        <Space size="small" style={{ justifyContent: 'center' }}>
           <Button
             type="link"
             icon={<EditOutlined />}
             onClick={() => showEditModal(record)}
+            size="small"
           >
             编辑
           </Button>
@@ -238,6 +242,7 @@ const CustomersPage = () => {
             danger
             icon={<DeleteOutlined />}
             onClick={() => handleDelete(record.id)}
+            size="small"
           >
             删除
           </Button>
@@ -322,6 +327,7 @@ const CustomersPage = () => {
           dataSource={filteredCustomers}
           rowKey="id"
           loading={loading}
+          scroll={{ x: '100%' }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
@@ -345,9 +351,8 @@ const CustomersPage = () => {
             onShowSizeChange: (current, size) => {
               setCurrentPage(1);
               setPageSize(size);
-            }
+            },
           }}
-          scroll={{ x: 1200 }}
           rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
         />
 

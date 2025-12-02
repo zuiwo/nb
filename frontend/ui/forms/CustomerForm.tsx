@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, Switch, message, Select } from 'antd';
 import { CreateCustomerDto, UpdateCustomerDto } from '../../lib/types/customer-types';
+import { customerService } from '../../lib/services/customerService';
 
 const { Option } = Select;
 
@@ -23,6 +24,18 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
 
+  // 生成客户编号
+  const generateCustomerCode = async () => {
+    try {
+      const code = await customerService.generateCustomerCode();
+      form.setFieldValue('code', code);
+    } catch (error) {
+      console.error('Failed to generate customer code:', error);
+      message.error('生成客户编号失败，请手动输入');
+      // 不设置默认值，让用户手动输入
+    }
+  };
+
   // 监听visible变化，重新初始化表单
   useEffect(() => {
     if (visible) {
@@ -33,8 +46,10 @@ const CustomerForm: React.FC<CustomerFormProps> = ({
           status: initialValues.status === 1
         });
       } else {
-        // 新增模式：重置表单
+        // 新增模式：重置表单并设置默认状态为启用，生成客户编号
         form.resetFields();
+        form.setFieldsValue({ status: true });
+        generateCustomerCode();
       }
     }
   }, [visible, isEditing, initialValues, form]);

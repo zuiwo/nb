@@ -1,8 +1,13 @@
 'use client';
 import React, { useState, useEffect } from 'react';
 import { Form, Input, Button, message, Select, DatePicker, InputNumber } from 'antd';
+import dayjs from 'dayjs';
 import { CreatePaymentDto, UpdatePaymentDto } from '../../lib/types/payment-types';
 import { Customer } from '../../lib/types/customer-types';
+import { DictionaryItem } from '../../lib/types/dictionary-types';
+import { Setting } from '../../lib/types/setting-types';
+import { dictionaryService } from '../../lib/services/dictionaryService';
+import { settingService } from '../../lib/services/settingService';
 import { formatPrice } from '@/lib/utils/format';
 
 const { Option } = Select;
@@ -27,6 +32,53 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
 }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [settings, setSettings] = useState<Setting[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<DictionaryItem[]>([]);
+  const [accounts, setAccounts] = useState<DictionaryItem[]>([]);
+  const [dictLoading, setDictLoading] = useState(true);
+
+  // 加载设置和字典数据
+  const loadDictData = async () => {
+    try {
+      setDictLoading(true);
+      // 获取设置数据
+      const settingsData = await settingService.getSettings();
+      setSettings(settingsData);
+      
+      // 获取字典映射关系
+      const paymentMethodDictCode = settingsData.find(s => s.key === 'payment_method_dict')?.value || '';
+      const accountDictCode = settingsData.find(s => s.key === 'payment_account_dict')?.value || '';
+      
+      // 只有在字典映射不为空时才获取字典项
+      let paymentMethodItems: DictionaryItem[] = [];
+      let accountItems: DictionaryItem[] = [];
+      
+      if (paymentMethodDictCode) {
+        paymentMethodItems = await dictionaryService.getDictionaryItems(paymentMethodDictCode);
+      }
+      
+      if (accountDictCode) {
+        accountItems = await dictionaryService.getDictionaryItems(accountDictCode);
+      }
+      
+      // 过滤掉禁用状态的字典项，只保留启用状态的字典项
+      setPaymentMethods(paymentMethodItems.filter(item => item.status === 1));
+      setAccounts(accountItems.filter(item => item.status === 1));
+      
+    } catch (error) {
+      console.error('Failed to load dictionary data:', error);
+      message.error('加载字典数据失败');
+    } finally {
+      setDictLoading(false);
+    }
+  };
+
+  // 获取字典数据
+  useEffect(() => {
+    if (visible) {
+      loadDictData();
+    }
+  }, [visible]);
 
   // 监听visible变化，重新初始化表单
   useEffect(() => {
@@ -35,12 +87,12 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         // 编辑模式：直接使用initialValues
         form.setFieldsValue({
           ...initialValues,
-          paymentDate: initialValues.paymentDate ? new Date(initialValues.paymentDate) : undefined
+          paymentDate: initialValues.paymentDate ? dayjs(initialValues.paymentDate) : undefined
         });
       } else {
         // 新增模式：重置表单，默认收款日期为今天
         form.resetFields();
-        form.setFieldValue('paymentDate', new Date());
+        form.setFieldValue('paymentDate', dayjs());
       }
     }
   }, [visible, isEditing, initialValues, form]);
@@ -114,17 +166,41 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         <Form.Item
           name="paymentMethod"
           label="付款方式"
-          rules={[{ required: true, message: '请输入付款方式' }]}
+          rules={[{ required: true, message: '请选择付款方式' }]}
         >
-          <Input placeholder="请输入付款方式" />
+          <Select placeholder="请选择付款方式" loading={dictLoading}>
+            {paymentMethods.length === 0 ? (
+              <Option value="" disabled>
+                请先设置付款方式字典
+              </Option>
+            ) : (
+              paymentMethods.map(method => (
+                <Option key={method.code} value={method.code}>
+                  {method.name}
+                </Option>
+              ))
+            )}
+          </Select>
         </Form.Item>
 
         <Form.Item
           name="account"
           label="收款账户"
-          rules={[{ required: true, message: '请输入收款账户' }]}
+          rules={[{ required: true, message: '请选择收款账户' }]}
         >
-          <Input placeholder="请输入收款账户" />
+          <Select placeholder="请选择收款账户" loading={dictLoading}>
+            {accounts.length === 0 ? (
+              <Option value="" disabled>
+                请先设置收款账户字典
+              </Option>
+            ) : (
+              accounts.map(account => (
+                <Option key={account.code} value={account.code}>
+                  {account.name}
+                </Option>
+              ))
+            )}
+          </Select>
         </Form.Item>
 
         <Form.Item

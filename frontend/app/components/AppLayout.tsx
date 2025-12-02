@@ -12,7 +12,8 @@ import {
   ProductOutlined,
   SettingOutlined,
   DatabaseOutlined,
-  BookOutlined
+  BookOutlined,
+  DollarOutlined
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname } from 'next/navigation';
@@ -63,6 +64,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
       newSelectedKeys = ['inventory'];
     } else if (pathname.startsWith('/bills')) {
       newSelectedKeys = ['bills'];
+    } else if (pathname.startsWith('/payments')) {
+      newSelectedKeys = ['payments'];
     }
 
     setSelectedKeys(newSelectedKeys);
@@ -140,6 +143,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     key: 'sales',
                     icon: <ShoppingOutlined />,
                     label: <Link href="/sales">销售</Link>,
+                  },
+                  {
+                    key: 'payments',
+                    icon: <DollarOutlined />,
+                    label: <Link href="/payments">收款</Link>,
                   },
                   {
                     key: 'purchase',

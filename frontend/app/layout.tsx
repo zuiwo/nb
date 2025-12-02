@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ConfigProvider, App } from "antd";
+import { ConfigProvider, App, zhCN } from "antd";
 import { AntdRegistry } from '@ant-design/nextjs-registry';
 import AppLayout from "./components/AppLayout";
 
@@ -25,6 +25,7 @@ export default function RootLayout({
                 colorPrimary: '#1890ff',
               },
             }}
+            locale={zhCN}
           >
             <App>
               <AppLayout>{children}</AppLayout>

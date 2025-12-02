@@ -72,6 +72,37 @@ export const customerService = {
     }
   },
 
+  async generateCustomerCode(): Promise<string> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/generate-code`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Failed to generate customer code, response status:', response.status);
+        console.error('Response text:', errorText);
+        throw new Error(`Failed to generate customer code: ${response.status} ${response.statusText}`);
+      }
+      const data = await response.json();
+      console.log('Generated customer code:', data.code);
+      return data.code;
+    } catch (error) {
+      console.error('Error generating customer code:', error);
+      throw error;
+    }
+  },
+
+  async checkCustomerCode(code: string, id?: number): Promise<boolean> {
+    let url = `${API_BASE_URL}/customers/check-code?code=${encodeURIComponent(code)}`;
+    if (id) {
+      url += `&id=${id}`;
+    }
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error('Failed to check customer code');
+    }
+    const data = await response.json();
+    return data.isUnique;
+  },
+
   // 发票管理
   async getCustomerInvoices(customerId: number): Promise<Invoice[]> {
     const response = await fetch(`${API_BASE_URL}/customers/${customerId}/invoices`);

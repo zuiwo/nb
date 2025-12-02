@@ -178,14 +178,14 @@ const PaymentsPage = () => {
       title: '收款编号',
       dataIndex: 'code',
       key: 'code',
-      width: 120,
+      width: '8%',
       ellipsis: true,
     },
     {
       title: '收款日期',
       dataIndex: 'paymentDate',
       key: 'paymentDate',
-      width: 150,
+      width: '12%',
       ellipsis: true,
       render: (date: string) => formatDate(date),
     },
@@ -193,14 +193,14 @@ const PaymentsPage = () => {
       title: '客户名',
       dataIndex: 'customerName',
       key: 'customerName',
-      width: 180,
+      width: '12%',
       ellipsis: true,
     },
     {
       title: '付款金额',
       dataIndex: 'amount',
       key: 'amount',
-      width: 120,
+      width: '8%',
       ellipsis: true,
       render: (amount: number) => formatPrice(amount),
       align: 'right',
@@ -209,40 +209,43 @@ const PaymentsPage = () => {
       title: '付款方式',
       dataIndex: 'paymentMethod',
       key: 'paymentMethod',
-      width: 120,
+      width: '12%',
       ellipsis: true,
     },
     {
       title: '收款账户',
       dataIndex: 'account',
       key: 'account',
-      width: 120,
+      width: '12%',
       ellipsis: true,
     },
     {
       title: '付款公司',
       dataIndex: 'payerCompany',
       key: 'payerCompany',
-      width: 200,
+      width: '12%',
       ellipsis: true,
     },
     {
       title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 200,
+      width: '9%',
       ellipsis: true,
     },
     {
       title: '操作',
       key: 'action',
       width: 120,
+      fixed: 'right',
+      align: 'center',
       render: (_: unknown, record: Payment) => (
-        <Space size="middle">
+        <Space size="small" style={{ justifyContent: 'center' }}>
           <Button
             type="link"
             icon={<EditOutlined />}
             onClick={() => showEditModal(record)}
+            size="small"
           >
             编辑
           </Button>
@@ -251,6 +254,7 @@ const PaymentsPage = () => {
             danger
             icon={<DeleteOutlined />}
             onClick={() => handleDelete(record.id)}
+            size="small"
           >
             删除
           </Button>
@@ -264,12 +268,21 @@ const PaymentsPage = () => {
     const matchesCustomer = !searchParams.customerId || payment.customerId === searchParams.customerId;
     const matchesPaymentMethod = !searchParams.paymentMethod || payment.paymentMethod.includes(searchParams.paymentMethod);
     const matchesAccount = !searchParams.account || payment.account.includes(searchParams.account);
-    return matchesCustomer && matchesPaymentMethod && matchesAccount;
+    
+    // 日期范围过滤
+    let matchesDateRange = true;
+    if (searchParams.paymentDateRange) {
+      const [startDate, endDate] = searchParams.paymentDateRange;
+      const paymentDate = new Date(payment.paymentDate);
+      matchesDateRange = paymentDate >= startDate && paymentDate <= endDate;
+    }
+    
+    return matchesCustomer && matchesPaymentMethod && matchesAccount && matchesDateRange;
   });
 
   return (
     <Spin spinning={loading} style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ padding: 0, width: '100%' }}>
+      <div style={{ padding: 0, width: '100%', overflowX: 'hidden' }}>
         {/* 标题行 */}
         <div style={{ marginBottom: 16 }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>收款管理</h2>
@@ -329,7 +342,7 @@ const PaymentsPage = () => {
           <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
             新增收款
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={showBatchCreateModal}>
+          <Button type="default" icon={<PlusOutlined />} onClick={showBatchCreateModal}>
             批量创建
           </Button>
         </div>
@@ -339,6 +352,7 @@ const PaymentsPage = () => {
           dataSource={filteredPayments}
           rowKey="id"
           loading={loading}
+          scroll={{ x: '100%' }}
           pagination={{
             current: currentPage,
             pageSize: pageSize,
@@ -364,7 +378,6 @@ const PaymentsPage = () => {
               setPageSize(size);
             }
           }}
-          scroll={{ x: 1200 }}
           rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
         />
 
