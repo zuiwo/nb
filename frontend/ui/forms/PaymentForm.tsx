@@ -128,7 +128,12 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
           label="收款日期"
           rules={[{ required: true, message: '请选择收款日期' }]}
         >
-          <DatePicker style={{ width: '100%' }} />
+          <DatePicker
+            style={{ width: '100%' }}
+            placeholder="选择日期时间"
+            showTime={{ format: 'HH:mm' }}
+            format="YYYY-MM-DD HH:mm"
+          />
         </Form.Item>
 
         <Form.Item

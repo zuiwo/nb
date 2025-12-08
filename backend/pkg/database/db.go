@@ -201,6 +201,84 @@ func InitDB(config *config.DatabaseConfig) error {
   
   log.Println("Payments table created successfully")
 
+	// 创建sale_orders表（如果不存在）
+	createSaleOrdersTableSQL := `
+	CREATE TABLE IF NOT EXISTS sale_orders (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		code VARCHAR(20) UNIQUE,
+		total_amount DECIMAL(12, 2) NOT NULL,
+		paid_amount DECIMAL(12, 2) NOT NULL DEFAULT 0,
+		create_time TIMESTAMP NOT NULL,
+		customer_id INT NOT NULL,
+		customer_name VARCHAR(100) NOT NULL,
+		customer_phone VARCHAR(20) NOT NULL,
+		customer_city VARCHAR(50),
+		remark TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`
+	
+	if _, err := DB.Exec(createSaleOrdersTableSQL); err != nil {
+		return fmt.Errorf("failed to create sale_orders table: %w", err)
+	}
+	
+	log.Println("Sale_orders table created successfully")
+
+	// 创建sale_order_items表（如果不存在）
+	createSaleOrderItemsTableSQL := `
+	CREATE TABLE IF NOT EXISTS sale_order_items (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		sale_order_id INT NOT NULL,
+		product_id INT NOT NULL,
+		product_code VARCHAR(50),
+		product_name VARCHAR(255) NOT NULL,
+		quantity DECIMAL(10, 2) NOT NULL,
+		unit VARCHAR(50) NOT NULL,
+		price DECIMAL(10, 2) NOT NULL,
+		total DECIMAL(12, 2) NOT NULL,
+		discount_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+		remark TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		FOREIGN KEY (sale_order_id) REFERENCES sale_orders(id) ON DELETE CASCADE
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`
+	
+	if _, err := DB.Exec(createSaleOrderItemsTableSQL); err != nil {
+		return fmt.Errorf("failed to create sale_order_items table: %w", err)
+	}
+	
+	log.Println("Sale_order_items table created successfully")
+
+	// 创建statement_records表（如果不存在）
+	createStatementRecordsTableSQL := `
+	CREATE TABLE IF NOT EXISTS statement_records (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		customer_id INT NOT NULL,
+		customer_code VARCHAR(20) NOT NULL,
+		customer_name VARCHAR(100) NOT NULL,
+		date DATE NOT NULL,
+		sale_amount DECIMAL(12, 2) DEFAULT 0,
+		payment_amount DECIMAL(12, 2) DEFAULT 0,
+		balance DECIMAL(12, 2) NOT NULL,
+		remark TEXT,
+		source_type VARCHAR(20) NOT NULL,
+		source_id INT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE,
+		UNIQUE KEY unique_source (source_type, source_id)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+	`
+	
+	if _, err := DB.Exec(createStatementRecordsTableSQL); err != nil {
+		return fmt.Errorf("failed to create statement_records table: %w", err)
+	}
+	
+	log.Println("Statement_records table created successfully")
+
 	// 设置连接池参数
 	DB.SetMaxOpenConns(25)
 	DB.SetMaxIdleConns(5)

@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Drawer, message, Input, Space, Spin, Switch } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { Table, Button, Drawer, message, Input, Space, Spin, Switch, Dropdown, MenuProps, Modal } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EllipsisOutlined } from '@ant-design/icons';
 import CustomerForm from '@/ui/forms/CustomerForm';
 import { customerService } from '@/lib/services/customerService';
 import { Customer, CreateCustomerDto, UpdateCustomerDto } from '@/lib/types/customer-types';
@@ -231,7 +231,6 @@ const CustomersPage = () => {
         <Space size="small" style={{ justifyContent: 'center' }}>
           <Button
             type="link"
-            icon={<EditOutlined />}
             onClick={() => showEditModal(record)}
             size="small"
           >
@@ -240,7 +239,6 @@ const CustomersPage = () => {
           <Button
             type="link"
             danger
-            icon={<DeleteOutlined />}
             onClick={() => handleDelete(record.id)}
             size="small"
           >
@@ -314,47 +312,60 @@ const CustomersPage = () => {
         
         {/* 操作按钮行 */}
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-start', gap: 12 }}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
-            新增客户
+          <Button type="primary" onClick={showCreateModal}>
+            添加客户
           </Button>
-          <Button danger icon={<DeleteOutlined />} onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>
+          <Button danger onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>
             批量删除
           </Button>
         </div>
         
-        <Table
-          columns={columns}
-          dataSource={filteredCustomers}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: '100%' }}
-          pagination={{
-            current: currentPage,
-            pageSize: pageSize,
-            showSizeChanger: true,
-            pageSizeOptions: ['10', '20', '50', '100'],
-            showTotal: (total) => `共 ${total} 条数据`,
-            showQuickJumper: true,
-            size: 'default',
-            locale: {
-              items_per_page: '/页',
-              jump_to: '跳到第',
-              jump_to_confirm: '页',
-              prev_page: '上一页',
-              next_page: '下一页',
-              page: '页',
-            },
-            onChange: (page, size) => {
-              setCurrentPage(page);
-              setPageSize(size);
-            },
-            onShowSizeChange: (current, size) => {
-              setCurrentPage(1);
-              setPageSize(size);
-            },
-          }}
-          rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
-        />
+        {/* 客户列表 */}
+        <div style={{ overflowX: 'auto', marginBottom: 16, maxWidth: '100%', boxSizing: 'border-box' }}>
+          <Table
+            columns={columns}
+            dataSource={filteredCustomers}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: '1440px' }}
+            pagination={{
+              current: currentPage,
+              pageSize: pageSize,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              showTotal: (total) => `共 ${total} 条数据`,
+              showQuickJumper: true,
+              size: 'default',
+              locale: {
+                items_per_page: '/页',
+                jump_to: '跳到第',
+                jump_to_confirm: '页',
+                prev_page: '上一页',
+                next_page: '下一页',
+                page: '页',
+              },
+              onChange: (page, size) => {
+                setCurrentPage(page);
+                setPageSize(size);
+              },
+              onShowSizeChange: (current, size) => {
+                setCurrentPage(1);
+                setPageSize(size);
+              }
+            }}
+            rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
+            // 禁用表格拖动功能
+            onRow={() => ({
+              draggable: false,
+            })}
+            // 确保表格内元素不溢出
+            style={{
+              minWidth: '100%',
+              boxSizing: 'border-box',
+              tableLayout: 'fixed',
+            }}
+          />
+        </div>
 
         <Drawer
           title={isEditing ? '编辑客户' : '新增客户'}

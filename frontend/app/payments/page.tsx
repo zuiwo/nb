@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Drawer, message, Input, Space, Spin, Switch, DatePicker, Select } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
+import { Table, Button, Drawer, message, Input, Space, Spin, Switch, DatePicker, Select, Dropdown, MenuProps, Modal } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EllipsisOutlined } from '@ant-design/icons';
 import PaymentForm from '@/ui/forms/PaymentForm';
 import BatchPaymentForm from '@/ui/forms/BatchPaymentForm';
 import { paymentService } from '@/lib/services/paymentService';
@@ -243,7 +243,6 @@ const PaymentsPage = () => {
         <Space size="small" style={{ justifyContent: 'center' }}>
           <Button
             type="link"
-            icon={<EditOutlined />}
             onClick={() => showEditModal(record)}
             size="small"
           >
@@ -252,7 +251,6 @@ const PaymentsPage = () => {
           <Button
             type="link"
             danger
-            icon={<DeleteOutlined />}
             onClick={() => handleDelete(record.id)}
             size="small"
           >
@@ -298,6 +296,17 @@ const PaymentsPage = () => {
               style={{ width: 200 }}
               value={localSearchParams.customerId}
               onChange={(value) => setLocalSearchParams({ ...localSearchParams, customerId: value })}
+              showSearch
+              filterOption={(input, option) => {
+                if (!option) return false;
+                const customer = customers.find(c => c.id === option.value);
+                if (!customer) return false;
+                const searchValue = input.toLowerCase();
+                return (
+                  customer.code.toLowerCase().includes(searchValue) ||
+                  customer.name.toLowerCase().includes(searchValue)
+                );
+              }}
             >
               {customers.map(customer => (
                 <Option key={customer.id} value={customer.id}>
@@ -339,54 +348,68 @@ const PaymentsPage = () => {
         
         {/* 操作按钮行 */}
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-start', gap: 12 }}>
-          <Button type="primary" icon={<PlusOutlined />} onClick={showCreateModal}>
-            新增收款
+          <Button type="primary" onClick={showCreateModal}>
+            添加收款
           </Button>
-          <Button type="default" icon={<PlusOutlined />} onClick={showBatchCreateModal}>
+          <Button type="default" onClick={showBatchCreateModal}>
             批量创建
           </Button>
         </div>
         
-        <Table
-          columns={columns}
-          dataSource={filteredPayments}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: '100%' }}
-          pagination={{
-            current: currentPage,
-            pageSize: pageSize,
-            showSizeChanger: true,
-            pageSizeOptions: ['10', '20', '50', '100'],
-            showTotal: (total) => `共 ${total} 条数据`,
-            showQuickJumper: true,
-            size: 'default',
-            locale: {
-              items_per_page: '/页',
-              jump_to: '跳到第',
-              jump_to_confirm: '页',
-              prev_page: '上一页',
-              next_page: '下一页',
-              page: '页',
-            },
-            onChange: (page, size) => {
-              setCurrentPage(page);
-              setPageSize(size);
-            },
-            onShowSizeChange: (current, size) => {
-              setCurrentPage(1);
-              setPageSize(size);
-            }
-          }}
-          rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
-        />
+        {/* 收款记录列表 */}
+        <div style={{ overflowX: 'auto', marginBottom: 16, maxWidth: '100%', boxSizing: 'border-box' }}>
+          <Table
+            columns={columns}
+            dataSource={filteredPayments}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: '1440px' }}
+            pagination={{
+              current: currentPage,
+              pageSize: pageSize,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+              showTotal: (total) => `共 ${total} 条数据`,
+              showQuickJumper: true,
+              size: 'default',
+              locale: {
+                items_per_page: '/页',
+                jump_to: '跳到第',
+                jump_to_confirm: '页',
+                prev_page: '上一页',
+                next_page: '下一页',
+                page: '页',
+              },
+              onChange: (page, size) => {
+                setCurrentPage(page);
+                setPageSize(size);
+              },
+              onShowSizeChange: (current, size) => {
+                setCurrentPage(1);
+                setPageSize(size);
+              }
+            }}
+            rowSelection={{ selectedRowKeys, onChange: onSelectChange }}
+            // 禁用表格拖动功能
+            onRow={() => ({
+              draggable: false,
+            })}
+            // 确保表格内元素不溢出
+            style={{
+              minWidth: '100%',
+              boxSizing: 'border-box',
+              tableLayout: 'fixed',
+            }}
+          />
+        </div>
 
         <Drawer
           title={isEditing ? '编辑收款记录' : '新增收款记录'}
           placement="right"
           onClose={() => setIsDrawerVisible(false)}
           open={isDrawerVisible}
-          size="large"
+          size={1200}
+          resizable
         >
           <PaymentForm
             initialValues={currentPayment}
@@ -403,7 +426,8 @@ const PaymentsPage = () => {
           placement="right"
           onClose={() => setIsBatchDrawerVisible(false)}
           open={isBatchDrawerVisible}
-          size="large"
+          size={1200}
+          resizable
         >
           <BatchPaymentForm
             onSubmit={handleBatchCreate}

@@ -87,9 +87,11 @@ const ProductForm: React.FC<ProductFormProps> = ({
           status: initialValues.status === 1
         });
       } else {
-        // 新增模式：重置表单并生成产品编号
+        // 新增模式：重置表单并生成产品编号，默认启用状态
         form.resetFields();
         generateProductCode();
+        // 设置默认启用状态
+        form.setFieldValue('status', true);
       }
     }
   }, [visible, isEditing, initialValues, form]);

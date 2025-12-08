@@ -160,7 +160,9 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
         <DatePicker
           style={{ width: '100%' }}
           value={payments[index].paymentDate ? dayjs(payments[index].paymentDate) : undefined}
-          onChange={(date) => updateRow(index, 'paymentDate', date ? date.format('YYYY-MM-DD') : '')}
+          onChange={(date) => updateRow(index, 'paymentDate', date ? date.format('YYYY-MM-DD HH:mm') : '')}
+          showTime={{ format: 'HH:mm' }}
+          format="YYYY-MM-DD HH:mm"
         />
       ),
     },

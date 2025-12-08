@@ -38,7 +38,7 @@ func LoadConfig() *Config {
 	viper.SetDefault("DB_HOST", "localhost")
 	viper.SetDefault("DB_PORT", "3306")
 	viper.SetDefault("DB_USER", "root")
-	viper.SetDefault("DB_PASSWORD", "123456")
+	viper.SetDefault("DB_PASSWORD", "Mengmeng0429.")
 	viper.SetDefault("DB_NAME", "nb2")
 	viper.SetDefault("DB_CHARSET", "utf8mb4")
 

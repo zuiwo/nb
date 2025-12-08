@@ -4,10 +4,14 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
+	"sort"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/robfig/cron/v3"
 
 	"nb2/internal/config"
 	"nb2/pkg/database"
@@ -238,7 +242,106 @@ type BatchCreatePaymentRequest struct {
 	Payments []CreatePaymentRequest `json:"payments" binding:"required"`
 }
 
+// ========== 销售订单相关模型 ==========
+
+// SaleOrder 销售订单模型
+type SaleOrder struct {
+	ID            int             `json:"id"`
+	Code          string          `json:"code"`
+	CreateTime    string          `json:"createTime"`
+	CustomerID    int             `json:"customerId"`
+	CustomerName  string          `json:"customerName"`
+	CustomerPhone string          `json:"customerPhone"`
+	CustomerCity  string          `json:"customerCity"`
+	Items         []SaleOrderItem `json:"items"`
+	OrderAmount   float64         `json:"orderAmount"`
+	PaymentAmount float64         `json:"paymentAmount"`
+	Remark        string          `json:"remark"`
+	CreatedAt     string          `json:"createdAt"`
+	UpdatedAt     string          `json:"updatedAt"`
+}
+
+// SaleOrderItem 销售订单商品模型
+type SaleOrderItem struct {
+	ID             int     `json:"id"`
+	SaleOrderID    int     `json:"saleOrderId"`
+	ProductID      int     `json:"productId"`
+	ProductCode    string  `json:"productCode"`
+	ProductName    string  `json:"productName"`
+	Quantity       float64 `json:"quantity"`
+	Unit           string  `json:"unit"`
+	Price          float64 `json:"price"`
+	DiscountAmount float64 `json:"discountAmount"`
+	TotalAmount    float64 `json:"totalAmount"`
+	Remark         string  `json:"remark"`
+}
+
+// CreateSaleOrderRequest 创建销售订单请求
+type CreateSaleOrderRequest struct {
+	Code       string                       `json:"code" binding:"required"`
+	CreateTime string                       `json:"createTime" binding:"required"`
+	CustomerID int                          `json:"customerId" binding:"required"`
+	Items      []CreateSaleOrderItemRequest `json:"items" binding:"required"`
+	Remark     string                       `json:"remark"`
+}
+
+// CreateSaleOrderItemRequest 创建销售订单商品请求
+type CreateSaleOrderItemRequest struct {
+	ProductID      int     `json:"productId" binding:"required"`
+	ProductCode    string  `json:"productCode" binding:"required"`
+	ProductName    string  `json:"productName" binding:"required"`
+	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
+	Unit           string  `json:"unit" binding:"required"`
+	Price          float64 `json:"price" binding:"required,gt=0"`
+	DiscountAmount float64 `json:"discountAmount"`
+	TotalAmount    float64 `json:"totalAmount"`
+	Remark         string  `json:"remark"`
+}
+
+// UpdateSaleOrderRequest 更新销售订单请求
+type UpdateSaleOrderRequest struct {
+	Code       string                       `json:"code" binding:"required"`
+	CreateTime string                       `json:"createTime" binding:"required"`
+	CustomerID int                          `json:"customerId" binding:"required"`
+	Items      []UpdateSaleOrderItemRequest `json:"items" binding:"required"`
+	Remark     string                       `json:"remark"`
+}
+
+// UpdateSaleOrderItemRequest 更新销售订单商品请求
+type UpdateSaleOrderItemRequest struct {
+	ID             int     `json:"id,omitempty"`
+	ProductID      int     `json:"productId" binding:"required"`
+	ProductCode    string  `json:"productCode" binding:"required"`
+	ProductName    string  `json:"productName" binding:"required"`
+	Quantity       float64 `json:"quantity" binding:"required,gt=0"`
+	Unit           string  `json:"unit" binding:"required"`
+	Price          float64 `json:"price" binding:"required,gt=0"`
+	DiscountAmount float64 `json:"discountAmount"`
+	TotalAmount    float64 `json:"totalAmount"`
+	Remark         string  `json:"remark"`
+}
+
+// StatementRecord 对帐单记录模型
+type StatementRecord struct {
+	ID            int     `json:"id"`
+	CustomerID    int     `json:"customerId"`
+	CustomerCode  string  `json:"customerCode"`
+	CustomerName  string  `json:"customerName"`
+	Date          string  `json:"date"`
+	SaleAmount    float64 `json:"saleAmount"`
+	PaymentAmount float64 `json:"paymentAmount"`
+	Balance       float64 `json:"balance"`
+	Remark        string  `json:"remark"`
+	SourceType    string  `json:"sourceType"`
+	SourceID      int     `json:"sourceId"`
+	CreatedAt     string  `json:"createdAt"`
+	UpdatedAt     string  `json:"updatedAt"`
+}
+
 func main() {
+	// 初始化随机数种子
+	rand.Seed(time.Now().UnixNano())
+
 	// 加载配置
 	cfg := config.LoadConfig()
 
@@ -247,6 +350,38 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer database.CloseDB()
+
+	// 设置定时同步任务
+	c := cron.New()
+	// 每天5:00执行同步
+	_, err := c.AddFunc("0 5 * * *", func() {
+		log.Println("开始执行对帐单同步任务（5:00）")
+		if err := syncStatements(); err != nil {
+			log.Printf("对帐单同步失败：%v\n", err)
+		} else {
+			log.Println("对帐单同步完成")
+		}
+	})
+	if err != nil {
+		log.Printf("Failed to add 5:00 cron job: %v\n", err)
+	}
+
+	// 每天17:00执行同步
+	_, err = c.AddFunc("0 17 * * *", func() {
+		log.Println("开始执行对帐单同步任务（17:00）")
+		if err := syncStatements(); err != nil {
+			log.Printf("对帐单同步失败：%v\n", err)
+		} else {
+			log.Println("对帐单同步完成")
+		}
+	})
+	if err != nil {
+		log.Printf("Failed to add 17:00 cron job: %v\n", err)
+	}
+
+	// 启动定时任务
+	c.Start()
+	log.Println("定时同步任务已启动")
 
 	// 创建Gin引擎
 	r := gin.Default()
@@ -340,6 +475,24 @@ func main() {
 		payments.DELETE("/:id", deletePayment)
 	}
 
+	// 销售订单路由组
+	saleOrders := r.Group("/api/sale-orders")
+	{
+		saleOrders.GET("", getSaleOrders)
+		saleOrders.GET("/generate-code", generateSaleOrderCodeAPI)
+		saleOrders.GET("/:id", getSaleOrderByID)
+		saleOrders.POST("", createSaleOrder)
+		saleOrders.PUT("/:id", updateSaleOrder)
+		saleOrders.DELETE("/:id", deleteSaleOrder)
+	}
+
+	// 对帐单路由组
+	statements := r.Group("/api/statements")
+	{
+		statements.GET("", getStatements)
+		statements.GET("/sync", syncStatementsAPI)
+	}
+
 	// 启动服务器
 	addr := fmt.Sprintf(":%s", cfg.Server.Port)
 	log.Printf("Server starting on %s", addr)
@@ -363,6 +516,346 @@ func corsMiddleware() gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+// calculateStatementBalance 计算对帐单记录的结余金额
+func calculateStatementBalance(records []StatementRecord) []StatementRecord {
+	if len(records) == 0 {
+		return records
+	}
+
+	// 按日期升序排序
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Date < records[j].Date
+	})
+
+	// 计算结余金额
+	balance := 0.0
+	for i := range records {
+		// 每条记录的差额 = 发货金额 - 收款金额
+		diff := records[i].SaleAmount - records[i].PaymentAmount
+		balance += diff
+		records[i].Balance = balance
+	}
+
+	// 按日期降序返回（最新在前）
+	sort.Slice(records, func(i, j int) bool {
+		return records[i].Date > records[j].Date
+	})
+
+	return records
+}
+
+// getAllCustomers 获取所有客户
+func getAllCustomers() ([]Customer, error) {
+	rows, err := database.DB.Query("SELECT id, code, name, phone, province, city, district, address, company, status, remark, created_at, updated_at FROM customers")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var customers []Customer
+	for rows.Next() {
+		var c Customer
+		if err := rows.Scan(&c.ID, &c.Code, &c.Name, &c.Phone, &c.Province, &c.City, &c.District, &c.Address, &c.Company, &c.Status, &c.Remark, &c.CreatedAt, &c.UpdatedAt); err != nil {
+			return nil, err
+		}
+		customers = append(customers, c)
+	}
+
+	return customers, nil
+}
+
+// getCustomerSaleOrders 获取客户的所有销售订单
+func getCustomerSaleOrders(customerID int) ([]SaleOrder, error) {
+	rows, err := database.DB.Query("SELECT id, code, total_amount, paid_amount, create_time, customer_id, customer_name, customer_phone, customer_city, remark, created_at, updated_at FROM sale_orders WHERE customer_id = ?", customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var orders []SaleOrder
+	for rows.Next() {
+		var o SaleOrder
+		if err := rows.Scan(&o.ID, &o.Code, &o.OrderAmount, &o.PaymentAmount, &o.CreateTime, &o.CustomerID, &o.CustomerName, &o.CustomerPhone, &o.CustomerCity, &o.Remark, &o.CreatedAt, &o.UpdatedAt); err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+
+	return orders, nil
+}
+
+// getCustomerPayments 获取客户的所有收款记录
+func getCustomerPayments(customerID int) ([]Payment, error) {
+	rows, err := database.DB.Query("SELECT id, code, payment_date, customer_id, amount, payment_method, account, payer_company, remark, created_at, updated_at FROM payments WHERE customer_id = ?", customerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payments []Payment
+	for rows.Next() {
+		var p Payment
+		if err := rows.Scan(&p.ID, &p.Code, &p.PaymentDate, &p.CustomerID, &p.Amount, &p.PaymentMethod, &p.Account, &p.PayerCompany, &p.Remark, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		payments = append(payments, p)
+	}
+
+	return payments, nil
+}
+
+// saveStatementRecords 保存对帐单记录
+func saveStatementRecords(records []StatementRecord) error {
+	// 开始事务
+	tx, err := database.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// 先删除该客户的所有对帐单记录
+	if len(records) > 0 {
+		_, err := tx.Exec("DELETE FROM statement_records WHERE customer_id = ?", records[0].CustomerID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 批量插入新的对帐单记录
+	stmt, err := tx.Prepare("INSERT INTO statement_records (customer_id, customer_code, customer_name, date, sale_amount, payment_amount, balance, remark, source_type, source_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, record := range records {
+		_, err := stmt.Exec(record.CustomerID, record.CustomerCode, record.CustomerName, record.Date, record.SaleAmount, record.PaymentAmount, record.Balance, record.Remark, record.SourceType, record.SourceID)
+		if err != nil {
+			return err
+		}
+	}
+
+	// 提交事务
+	return tx.Commit()
+}
+
+// syncCustomerStatements 同步单个客户的对帐单数据
+func syncCustomerStatements(customerID int) error {
+	log.Printf("开始同步客户 %d 的对帐单\n", customerID)
+	// 获取客户信息
+	var customer Customer
+	err := database.DB.QueryRow("SELECT id, code, name FROM customers WHERE id = ?", customerID).Scan(&customer.ID, &customer.Code, &customer.Name)
+	if err != nil {
+		log.Printf("获取客户 %d 信息失败：%v\n", customerID, err)
+		return err
+	}
+	log.Printf("客户信息：ID=%d, 编号=%s, 名称=%s\n", customer.ID, customer.Code, customer.Name)
+
+	// 获取该客户的所有销售订单
+	saleOrders, err := getCustomerSaleOrders(customerID)
+	if err != nil {
+		log.Printf("获取客户 %d 销售订单失败：%v\n", customerID, err)
+		return err
+	}
+	log.Printf("获取到 %d 条销售订单\n", len(saleOrders))
+
+	// 获取该客户的所有收款记录
+	payments, err := getCustomerPayments(customerID)
+	if err != nil {
+		log.Printf("获取客户 %d 收款记录失败：%v\n", customerID, err)
+		return err
+	}
+	log.Printf("获取到 %d 条收款记录\n", len(payments))
+
+	// 合并并处理数据
+	var records []StatementRecord
+
+	// 处理销售订单
+	for _, order := range saleOrders {
+		// 将createTime转换为日期格式（YYYY-MM-DD）
+		date := order.CreateTime
+		if len(date) > 10 {
+			date = date[:10]
+		}
+
+		records = append(records, StatementRecord{
+			CustomerID:    customer.ID,
+			CustomerCode:  customer.Code,
+			CustomerName:  customer.Name,
+			Date:          date,
+			SaleAmount:    order.OrderAmount,
+			PaymentAmount: 0,
+			Remark:        order.Remark,
+			SourceType:    "sale_order",
+			SourceID:      order.ID,
+		})
+	}
+
+	// 处理收款记录
+	for _, payment := range payments {
+		records = append(records, StatementRecord{
+			CustomerID:    customer.ID,
+			CustomerCode:  customer.Code,
+			CustomerName:  customer.Name,
+			Date:          payment.PaymentDate,
+			SaleAmount:    0,
+			PaymentAmount: payment.Amount,
+			Remark:        payment.Remark,
+			SourceType:    "payment",
+			SourceID:      payment.ID,
+		})
+	}
+
+	log.Printf("共生成 %d 条对帐单记录\n", len(records))
+
+	// 计算结余金额
+	records = calculateStatementBalance(records)
+
+	// 保存对帐单记录
+	if err := saveStatementRecords(records); err != nil {
+		log.Printf("保存客户 %d 对帐单记录失败：%v\n", customerID, err)
+		return err
+	}
+	log.Printf("客户 %d 对帐单同步完成\n", customerID)
+	return nil
+}
+
+// syncStatements 同步所有客户的对帐单数据
+func syncStatements() error {
+	log.Println("开始同步所有客户对帐单")
+	// 获取所有客户
+	customers, err := getAllCustomers()
+	if err != nil {
+		log.Printf("获取客户列表失败：%v\n", err)
+		return err
+	}
+	log.Printf("共获取到 %d 个客户\n", len(customers))
+
+	for i, customer := range customers {
+		log.Printf("正在同步第 %d/%d 个客户：ID=%d, 名称=%s\n", i+1, len(customers), customer.ID, customer.Name)
+		if err := syncCustomerStatements(customer.ID); err != nil {
+			log.Printf("同步客户 %d 对帐单失败：%v\n", customer.ID, err)
+			return err
+		}
+	}
+	log.Println("所有客户对帐单同步完成")
+	return nil
+}
+
+// getStatements 获取对帐单列表
+func getStatements(c *gin.Context) {
+	// 获取查询参数
+	customerIDStr := c.Query("customerId")
+	startTime := c.Query("startTime")
+	endTime := c.Query("endTime")
+	pageStr := c.DefaultQuery("page", "1")
+	pageSizeStr := c.DefaultQuery("pageSize", "100")
+
+	// 解析参数
+	var customerID int
+	if customerIDStr != "" {
+		var err error
+		customerID, err = strconv.Atoi(customerIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid customerId"})
+			return
+		}
+	}
+
+	page, _ := strconv.Atoi(pageStr)
+	pageSize, _ := strconv.Atoi(pageSizeStr)
+
+	// 构建查询条件
+	query := "SELECT id, customer_id, customer_code, customer_name, date, sale_amount, payment_amount, balance, remark, source_type, source_id, created_at, updated_at FROM statement_records WHERE 1=1"
+	args := []interface{}{}
+
+	if customerID > 0 {
+		query += " AND customer_id = ?"
+		args = append(args, customerID)
+	}
+
+	if startTime != "" {
+		query += " AND date >= ?"
+		args = append(args, startTime)
+	}
+
+	if endTime != "" {
+		query += " AND date <= ?"
+		args = append(args, endTime)
+	}
+
+	// 添加排序
+	query += " ORDER BY date DESC, id DESC"
+
+	// 添加分页
+	offset := (page - 1) * pageSize
+	query += " LIMIT ? OFFSET ?"
+	args = append(args, pageSize, offset)
+
+	// 执行查询
+	rows, err := database.DB.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch statements"})
+		return
+	}
+	defer rows.Close()
+
+	// 处理查询结果
+	var records []StatementRecord
+	for rows.Next() {
+		var r StatementRecord
+		if err := rows.Scan(&r.ID, &r.CustomerID, &r.CustomerCode, &r.CustomerName, &r.Date, &r.SaleAmount, &r.PaymentAmount, &r.Balance, &r.Remark, &r.SourceType, &r.SourceID, &r.CreatedAt, &r.UpdatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan statement record"})
+			return
+		}
+		records = append(records, r)
+	}
+
+	// 获取总记录数
+	countQuery := "SELECT COUNT(*) FROM statement_records WHERE 1=1"
+	countArgs := []interface{}{}
+
+	if customerID > 0 {
+		countQuery += " AND customer_id = ?"
+		countArgs = append(countArgs, customerID)
+	}
+
+	if startTime != "" {
+		countQuery += " AND date >= ?"
+		countArgs = append(countArgs, startTime)
+	}
+
+	if endTime != "" {
+		countQuery += " AND date <= ?"
+		countArgs = append(countArgs, endTime)
+	}
+
+	var total int
+	err = database.DB.QueryRow(countQuery, countArgs...).Scan(&total)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count statements"})
+		return
+	}
+
+	// 返回结果
+	c.JSON(http.StatusOK, gin.H{
+		"total":   total,
+		"records": records,
+	})
+}
+
+// syncStatementsAPI 手动触发对帐单同步的API
+func syncStatementsAPI(c *gin.Context) {
+	log.Println("手动触发对帐单同步")
+	if err := syncStatements(); err != nil {
+		log.Printf("对帐单同步失败：%v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync statements", "message": err.Error()})
+		return
+	}
+	log.Println("对帐单同步成功")
+	c.JSON(http.StatusOK, gin.H{"message": "对帐单同步成功"})
 }
 
 // getProducts 获取产品列表
@@ -1722,6 +2215,451 @@ func batchDeleteCustomers(c *gin.Context) {
 	})
 }
 
+// ========== 销售订单 API ==========
+
+// generateSaleOrderCode 生成销售订单号（S+YYMMDD+4位递增数字）
+func generateSaleOrderCode(db *sql.DB) (string, error) {
+	// 获取当前日期，格式：YYMMDD
+	currentDate := time.Now().Format("060102")
+	prefix := "S" + currentDate
+
+	// 获取当天最大的销售订单号
+	var maxCode sql.NullString
+	query := "SELECT MAX(code) FROM sale_orders WHERE code LIKE ?"
+	err := db.QueryRow(query, prefix+"%").Scan(&maxCode)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+
+	var nextNum int
+	if !maxCode.Valid || maxCode.String == "" {
+		// 当天无订单时，从0001开始
+		nextNum = 1
+	} else {
+		// 提取数字部分并递增
+		numPart := maxCode.String[7:] // 跳过前缀 S+YYMMDD (7位)
+		currentNum, err := strconv.Atoi(numPart)
+		if err != nil {
+			// 格式错误时，从0001开始
+			nextNum = 1
+		} else {
+			nextNum = currentNum + 1
+		}
+	}
+
+	// 生成新编号，始终使用S+YYMMDD+4位数字格式
+	newCode := fmt.Sprintf("%s%04d", prefix, nextNum)
+	return newCode, nil
+}
+
+// generateSaleOrderCodeInTx 在事务内生成销售订单号（S+YYMMDD+4位递增数字）
+func generateSaleOrderCodeInTx(tx *sql.Tx) (string, error) {
+	// 获取当前日期，格式：YYMMDD
+	currentDate := time.Now().Format("060102")
+	prefix := "S" + currentDate
+
+	// 获取当天最大的销售订单号
+	var maxCode sql.NullString
+	query := "SELECT MAX(code) FROM sale_orders WHERE code LIKE ?"
+	err := tx.QueryRow(query, prefix+"%").Scan(&maxCode)
+	if err != nil && err != sql.ErrNoRows {
+		return "", err
+	}
+
+	var nextNum int
+	if !maxCode.Valid || maxCode.String == "" {
+		// 当天无订单时，从0001开始
+		nextNum = 1
+	} else {
+		// 提取数字部分并递增
+		numPart := maxCode.String[7:] // 跳过前缀 S+YYMMDD (7位)
+		currentNum, err := strconv.Atoi(numPart)
+		if err != nil {
+			// 格式错误时，从0001开始
+			nextNum = 1
+		} else {
+			nextNum = currentNum + 1
+		}
+	}
+
+	// 生成新编号，始终使用S+YYMMDD+4位数字格式
+	newCode := fmt.Sprintf("%s%04d", prefix, nextNum)
+	return newCode, nil
+}
+
+// generateSaleOrderCodeAPI 生成销售订单号API
+func generateSaleOrderCodeAPI(c *gin.Context) {
+	code, err := generateSaleOrderCode(database.DB)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate sale order code"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code})
+}
+
+// getSaleOrders 获取销售订单列表
+func getSaleOrders(c *gin.Context) {
+	// 检查数据库连接
+	if database.DB == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database connection is nil"})
+		return
+	}
+
+	// 获取销售订单列表
+	rows, err := database.DB.Query("SELECT id, code, create_time, customer_id, customer_name, customer_phone, customer_city, total_amount, paid_amount, COALESCE(remark, ''), created_at, updated_at FROM sale_orders ORDER BY created_at DESC")
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale orders: " + err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var saleOrders []SaleOrder
+	for rows.Next() {
+		var so SaleOrder
+		if err := rows.Scan(&so.ID, &so.Code, &so.CreateTime, &so.CustomerID, &so.CustomerName, &so.CustomerPhone, &so.CustomerCity, &so.OrderAmount, &so.PaymentAmount, &so.Remark, &so.CreatedAt, &so.UpdatedAt); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan sale order: " + err.Error()})
+			return
+		}
+
+		// 获取销售订单商品
+		itemRows, err := database.DB.Query("SELECT id, sale_order_id, product_id, product_code, product_name, quantity, unit, price, discount_amount, total, COALESCE(remark, '') FROM sale_order_items WHERE sale_order_id = ?", so.ID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale order items: " + err.Error()})
+			return
+		}
+
+		var items []SaleOrderItem
+		for itemRows.Next() {
+			var item SaleOrderItem
+			if err := itemRows.Scan(&item.ID, &item.SaleOrderID, &item.ProductID, &item.ProductCode, &item.ProductName, &item.Quantity, &item.Unit, &item.Price, &item.DiscountAmount, &item.TotalAmount, &item.Remark); err != nil {
+				itemRows.Close()
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan sale order item: " + err.Error()})
+				return
+			}
+			items = append(items, item)
+		}
+		itemRows.Close()
+
+		so.Items = items
+		saleOrders = append(saleOrders, so)
+	}
+
+	c.JSON(http.StatusOK, saleOrders)
+}
+
+// getSaleOrderByID 根据ID获取销售订单
+func getSaleOrderByID(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sale order ID"})
+		return
+	}
+
+	// 获取销售订单
+	var so SaleOrder
+	err = database.DB.QueryRow("SELECT id, code, create_time, customer_id, customer_name, customer_phone, customer_city, total_amount, paid_amount, COALESCE(remark, ''), created_at, updated_at FROM sale_orders WHERE id = ?", id).Scan(
+		&so.ID, &so.Code, &so.CreateTime, &so.CustomerID, &so.CustomerName, &so.CustomerPhone, &so.CustomerCity, &so.OrderAmount, &so.PaymentAmount, &so.Remark, &so.CreatedAt, &so.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Sale order not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale order: " + err.Error()})
+		return
+	}
+
+	// 获取销售订单商品
+	itemRows, err := database.DB.Query("SELECT id, sale_order_id, product_id, product_code, product_name, quantity, unit, price, discount_amount, total, COALESCE(remark, '') FROM sale_order_items WHERE sale_order_id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale order items: " + err.Error()})
+		return
+	}
+	defer itemRows.Close()
+
+	var items []SaleOrderItem
+	for itemRows.Next() {
+		var item SaleOrderItem
+		if err := itemRows.Scan(&item.ID, &item.SaleOrderID, &item.ProductID, &item.ProductCode, &item.ProductName, &item.Quantity, &item.Unit, &item.Price, &item.DiscountAmount, &item.TotalAmount, &item.Remark); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan sale order item: " + err.Error()})
+			return
+		}
+		items = append(items, item)
+	}
+
+	so.Items = items
+
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(so.CustomerID)
+
+	c.JSON(http.StatusOK, so)
+}
+
+// createSaleOrder 创建销售订单
+func createSaleOrder(c *gin.Context) {
+	var req CreateSaleOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 开始事务
+	tx, err := database.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	// 获取客户信息
+	var customer Customer
+	err = tx.QueryRow("SELECT name, phone, city FROM customers WHERE id = ?", req.CustomerID).Scan(&customer.Name, &customer.Phone, &customer.City)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch customer: " + err.Error()})
+		return
+	}
+
+	// 计算订单总金额
+	var orderAmount float64
+	for _, item := range req.Items {
+		orderAmount += item.TotalAmount
+	}
+
+	// 订单号处理：优先使用前端传递的code，如果为空则自动生成
+	orderCode := req.Code
+	if orderCode == "" {
+		// 使用事务内的连接生成订单号，确保原子性
+		orderCode, err = generateSaleOrderCodeInTx(tx)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate sale order code: " + err.Error()})
+			return
+		}
+	}
+
+	// 创建销售订单
+	result, err := tx.Exec(
+		"INSERT INTO sale_orders (code, create_time, customer_id, customer_name, customer_phone, customer_city, total_amount, paid_amount, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		orderCode, req.CreateTime, req.CustomerID, customer.Name, customer.Phone, customer.City, orderAmount, 0, req.Remark,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create sale order: " + err.Error()})
+		return
+	}
+
+	saleOrderID, err := result.LastInsertId()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get last insert ID"})
+		return
+	}
+
+	// 创建销售订单商品
+	for _, item := range req.Items {
+		_, err := tx.Exec(
+			"INSERT INTO sale_order_items (sale_order_id, product_id, product_code, product_name, quantity, unit, price, discount_amount, total, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			saleOrderID, item.ProductID, item.ProductCode, item.ProductName, item.Quantity, item.Unit, item.Price, item.DiscountAmount, item.TotalAmount, item.Remark,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create sale order item: " + err.Error()})
+			return
+		}
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
+		return
+	}
+
+	// 直接查询并返回创建的销售订单
+	// 切换回普通连接查询
+	// 获取销售订单
+	var so SaleOrder
+	err = database.DB.QueryRow("SELECT id, code, create_time, customer_id, customer_name, customer_phone, customer_city, total_amount, paid_amount, COALESCE(remark, ''), created_at, updated_at FROM sale_orders WHERE id = ?", saleOrderID).Scan(
+		&so.ID, &so.Code, &so.CreateTime, &so.CustomerID, &so.CustomerName, &so.CustomerPhone, &so.CustomerCity, &so.OrderAmount, &so.PaymentAmount, &so.Remark, &so.CreatedAt, &so.UpdatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Sale order not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale order: " + err.Error()})
+		return
+	}
+
+	// 获取销售订单商品
+	itemRows, err := database.DB.Query("SELECT id, sale_order_id, product_id, product_code, product_name, quantity, unit, price, discount_amount, total, COALESCE(remark, '') FROM sale_order_items WHERE sale_order_id = ?", saleOrderID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sale order items: " + err.Error()})
+		return
+	}
+	defer itemRows.Close()
+
+	var items []SaleOrderItem
+	for itemRows.Next() {
+		var item SaleOrderItem
+		if err := itemRows.Scan(&item.ID, &item.SaleOrderID, &item.ProductID, &item.ProductCode, &item.ProductName, &item.Quantity, &item.Unit, &item.Price, &item.DiscountAmount, &item.TotalAmount, &item.Remark); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan sale order item: " + err.Error()})
+			return
+		}
+		items = append(items, item)
+	}
+
+	so.Items = items
+
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(req.CustomerID)
+
+	c.JSON(http.StatusOK, so)
+}
+
+// updateSaleOrder 更新销售订单
+func updateSaleOrder(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sale order ID"})
+		return
+	}
+
+	var req UpdateSaleOrderRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 检查销售订单是否存在
+	var exists bool
+	err = database.DB.QueryRow("SELECT EXISTS(SELECT 1 FROM sale_orders WHERE id = ?)", id).Scan(&exists)
+	if !exists {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Sale order not found"})
+		return
+	}
+
+	// 开始事务
+	tx, err := database.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	// 获取客户信息
+	var customer Customer
+	err = tx.QueryRow("SELECT name, phone, city FROM customers WHERE id = ?", req.CustomerID).Scan(&customer.Name, &customer.Phone, &customer.City)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch customer: " + err.Error()})
+		return
+	}
+
+	// 计算订单总金额
+	var orderAmount float64
+	for _, item := range req.Items {
+		orderAmount += item.TotalAmount
+	}
+
+	// 更新销售订单
+	_, err = tx.Exec(
+		"UPDATE sale_orders SET code = ?, create_time = ?, customer_id = ?, customer_name = ?, customer_phone = ?, customer_city = ?, total_amount = ?, remark = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+		req.Code, req.CreateTime, req.CustomerID, customer.Name, customer.Phone, customer.City, orderAmount, req.Remark, id,
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update sale order: " + err.Error()})
+		return
+	}
+
+	// 删除旧的销售订单商品
+	_, err = tx.Exec("DELETE FROM sale_order_items WHERE sale_order_id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete old sale order items: " + err.Error()})
+		return
+	}
+
+	// 创建新的销售订单商品
+	for _, item := range req.Items {
+		_, err := tx.Exec(
+			"INSERT INTO sale_order_items (sale_order_id, product_id, product_code, product_name, quantity, unit, price, discount_amount, total, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			id, item.ProductID, item.ProductCode, item.ProductName, item.Quantity, item.Unit, item.Price, item.DiscountAmount, item.TotalAmount, item.Remark,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create sale order item: " + err.Error()})
+			return
+		}
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
+		return
+	}
+
+	// 获取更新后的销售订单
+	getSaleOrderByID(c)
+}
+
+// deleteSaleOrder 删除销售订单
+func deleteSaleOrder(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid sale order ID"})
+		return
+	}
+
+	// 获取客户ID以便后续同步对帐单
+	var customerID int
+	err = database.DB.QueryRow("SELECT customer_id FROM sale_orders WHERE id = ?", id).Scan(&customerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer ID"})
+		return
+	}
+
+	// 开始事务
+	tx, err := database.DB.Begin()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to begin transaction: " + err.Error()})
+		return
+	}
+	defer tx.Rollback()
+
+	// 删除销售订单商品
+	_, err = tx.Exec("DELETE FROM sale_order_items WHERE sale_order_id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete sale order items: " + err.Error()})
+		return
+	}
+
+	// 删除销售订单
+	_, err = tx.Exec("DELETE FROM sale_orders WHERE id = ?", id)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete sale order: " + err.Error()})
+		return
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to commit transaction: " + err.Error()})
+		return
+	}
+
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(customerID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "Sale order deleted successfully"})
+}
+
 // ========== 发票管理 API ==========
 
 // getCustomerInvoices 获取客户发票列表
@@ -2042,6 +2980,13 @@ func createPayment(c *gin.Context) {
 		return
 	}
 
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(req.CustomerID)
+
 	c.JSON(http.StatusCreated, payment)
 }
 
@@ -2247,6 +3192,13 @@ func updatePayment(c *gin.Context) {
 		return
 	}
 
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(payment.CustomerID)
+
 	c.JSON(http.StatusOK, payment)
 }
 
@@ -2256,6 +3208,14 @@ func deletePayment(c *gin.Context) {
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payment ID"})
+		return
+	}
+
+	// 获取客户ID以便后续同步对帐单
+	var customerID int
+	err = database.DB.QueryRow("SELECT customer_id FROM payments WHERE id = ?", id).Scan(&customerID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get customer ID"})
 		return
 	}
 
@@ -2273,6 +3233,13 @@ func deletePayment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete payment"})
 		return
 	}
+
+	// 异步同步该客户的对帐单
+	go func(customerID int) {
+		if err := syncCustomerStatements(customerID); err != nil {
+			log.Printf("同步客户对帐单失败：%v\n", err)
+		}
+	}(customerID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "Payment deleted successfully"})
 }

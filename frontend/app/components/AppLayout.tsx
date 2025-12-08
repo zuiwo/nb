@@ -63,9 +63,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
     } else if (pathname.startsWith('/inventory')) {
       newSelectedKeys = ['inventory'];
     } else if (pathname.startsWith('/bills')) {
-      newSelectedKeys = ['bills'];
+      newSelectedKeys = ['statements'];
     } else if (pathname.startsWith('/payments')) {
       newSelectedKeys = ['payments'];
+    } else if (pathname.startsWith('/statements')) {
+      newSelectedKeys = ['statements'];
     }
 
     setSelectedKeys(newSelectedKeys);
@@ -160,9 +162,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
                     label: <Link href="/inventory">库存</Link>,
                   },
                   {
-                    key: 'bills',
+                    key: 'statements',
                     icon: <FileTextOutlined />,
-                    label: <Link href="/bills">账单</Link>,
+                    label: <Link href="/statements">对帐单</Link>,
                   },
                   {
                     key: 'basic-info',
