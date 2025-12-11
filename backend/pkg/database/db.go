@@ -51,11 +51,11 @@ func InitDB(config *config.DatabaseConfig) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
-	
+
 	if _, err := DB.Exec(createTableSQL); err != nil {
 		return fmt.Errorf("failed to create products table: %w", err)
 	}
-	
+
 	log.Println("Products table created successfully")
 
 	// 创建dictionary_types表（如果不存在）
@@ -71,15 +71,15 @@ func InitDB(config *config.DatabaseConfig) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
-	
+
 	if _, err := DB.Exec(createDictTypesTableSQL); err != nil {
 		return fmt.Errorf("failed to create dictionary_types table: %w", err)
 	}
-	
+
 	log.Println("Dictionary_types table created successfully")
 
 	// 创建dictionary_items表（如果不存在）
-  createDictItemsTableSQL := `
+	createDictItemsTableSQL := `
   CREATE TABLE IF NOT EXISTS dictionary_items (
     id INT AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(20) NOT NULL UNIQUE,
@@ -93,44 +93,81 @@ func InitDB(config *config.DatabaseConfig) error {
     FOREIGN KEY (dict_type_code) REFERENCES dictionary_types(code) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `
-  
-  if _, err := DB.Exec(createDictItemsTableSQL); err != nil {
-    return fmt.Errorf("failed to create dictionary_items table: %w", err)
-  }
-  
-  log.Println("Dictionary_items table created successfully")
 
-  // 创建settings表（如果不存在）
-  createSettingsTableSQL := "CREATE TABLE IF NOT EXISTS settings (" +
-    "id INT AUTO_INCREMENT PRIMARY KEY," +
-    "`key` VARCHAR(50) NOT NULL UNIQUE," +
-    "value VARCHAR(255) NOT NULL," +
-    "description TEXT," +
-    "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
-    "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
-    ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
-  
-  if _, err := DB.Exec(createSettingsTableSQL); err != nil {
-    return fmt.Errorf("failed to create settings table: %w", err)
-  }
-  
-  log.Println("Settings table created successfully")
+	if _, err := DB.Exec(createDictItemsTableSQL); err != nil {
+		return fmt.Errorf("failed to create dictionary_items table: %w", err)
+	}
 
-  // 插入初始设置数据
-  insertSettingsSQL := "INSERT INTO settings (`key`, value, description) VALUES " +
-    "('product_category_dict', 'D01', '产品分类字典'), " +
-    "('product_brand_dict', 'D02', '品牌字典'), " +
-    "('product_unit_dict', 'D03', '单位字典') " +
-    "ON DUPLICATE KEY UPDATE value = VALUES(value), description = VALUES(description);"
-  
-  if _, err := DB.Exec(insertSettingsSQL); err != nil {
-    return fmt.Errorf("failed to insert initial settings: %w", err)
-  }
-  
-  log.Println("Initial settings inserted successfully")
+	log.Println("Dictionary_items table created successfully")
 
-  // 创建customers表（如果不存在）
-  createCustomersTableSQL := `
+	// 创建settings表（如果不存在）
+	createSettingsTableSQL := "CREATE TABLE IF NOT EXISTS settings (" +
+		"id INT AUTO_INCREMENT PRIMARY KEY," +
+		"`key` VARCHAR(50) NOT NULL UNIQUE," +
+		"value VARCHAR(255) NOT NULL," +
+		"description TEXT," +
+		"created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP," +
+		"updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" +
+		") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;"
+
+	if _, err := DB.Exec(createSettingsTableSQL); err != nil {
+		return fmt.Errorf("failed to create settings table: %w", err)
+	}
+
+	log.Println("Settings table created successfully")
+
+	// 插入字典类型数据
+	insertDictTypesSQL := "INSERT INTO dictionary_types (code, name) VALUES " +
+		"('D01', '产品分类'), " +
+		"('D02', '产品品牌'), " +
+		"('D03', '产品单位'), " +
+		"('D04', '付款方式'), " +
+		"('D05', '收款账户') " +
+		"ON DUPLICATE KEY UPDATE name = VALUES(name);"
+
+	if _, err := DB.Exec(insertDictTypesSQL); err != nil {
+		return fmt.Errorf("failed to insert dictionary types: %w", err)
+	}
+
+	log.Println("Dictionary types inserted successfully")
+
+	// 先清空现有的字典项数据
+	if _, err := DB.Exec("DELETE FROM dictionary_items"); err != nil {
+		return fmt.Errorf("failed to delete existing dictionary items: %w", err)
+	}
+
+	// 插入字典项数据 - 每个字典类型只保留一个默认值
+	insertDictItemsSQL := "INSERT INTO dictionary_items (code, name, dict_type_code, status) VALUES " +
+		"('D01001', '字典默认值', 'D01', 1), " +
+		"('D02001', '字典默认值', 'D02', 1), " +
+		"('D03001', '字典默认值', 'D03', 1), " +
+		"('D04001', '字典默认值', 'D04', 1), " +
+		"('D05001', '字典默认值', 'D05', 1) " +
+		"ON DUPLICATE KEY UPDATE name = VALUES(name), dict_type_code = VALUES(dict_type_code), status = VALUES(status);"
+
+	if _, err := DB.Exec(insertDictItemsSQL); err != nil {
+		return fmt.Errorf("failed to insert dictionary items: %w", err)
+	}
+
+	log.Println("Dictionary items inserted successfully")
+
+	// 插入初始设置数据
+	insertSettingsSQL := "INSERT INTO settings (`key`, value, description) VALUES " +
+		"('product_category_dict', 'D01', '产品分类字典'), " +
+		"('product_brand_dict', 'D02', '品牌字典'), " +
+		"('product_unit_dict', 'D03', '单位字典'), " +
+		"('payment_method_dict', 'D04', '付款方式字典'), " +
+		"('payment_account_dict', 'D05', '收款账户字典') " +
+		"ON DUPLICATE KEY UPDATE value = VALUES(value), description = VALUES(description);"
+
+	if _, err := DB.Exec(insertSettingsSQL); err != nil {
+		return fmt.Errorf("failed to insert initial settings: %w", err)
+	}
+
+	log.Println("Initial settings inserted successfully")
+
+	// 创建customers表（如果不存在）
+	createCustomersTableSQL := `
   CREATE TABLE IF NOT EXISTS customers (
     id INT AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(20) UNIQUE,
@@ -147,15 +184,15 @@ func InitDB(config *config.DatabaseConfig) error {
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `
-  
-  if _, err := DB.Exec(createCustomersTableSQL); err != nil {
-    return fmt.Errorf("failed to create customers table: %w", err)
-  }
-  
-  log.Println("Customers table created successfully")
 
-  // 创建invoices表（如果不存在）
-  createInvoicesTableSQL := `
+	if _, err := DB.Exec(createCustomersTableSQL); err != nil {
+		return fmt.Errorf("failed to create customers table: %w", err)
+	}
+
+	log.Println("Customers table created successfully")
+
+	// 创建invoices表（如果不存在）
+	createInvoicesTableSQL := `
   CREATE TABLE IF NOT EXISTS invoices (
     id INT AUTO_INCREMENT PRIMARY KEY,
     customer_id INT NOT NULL,
@@ -170,15 +207,15 @@ func InitDB(config *config.DatabaseConfig) error {
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `
-  
-  if _, err := DB.Exec(createInvoicesTableSQL); err != nil {
-    return fmt.Errorf("failed to create invoices table: %w", err)
-  }
-  
-  log.Println("Invoices table created successfully")
 
-  // 创建payments表（如果不存在）
-  createPaymentsTableSQL := `
+	if _, err := DB.Exec(createInvoicesTableSQL); err != nil {
+		return fmt.Errorf("failed to create invoices table: %w", err)
+	}
+
+	log.Println("Invoices table created successfully")
+
+	// 创建payments表（如果不存在）
+	createPaymentsTableSQL := `
   CREATE TABLE IF NOT EXISTS payments (
     id INT AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(20) UNIQUE,
@@ -195,12 +232,12 @@ func InitDB(config *config.DatabaseConfig) error {
     FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   `
-  
-  if _, err := DB.Exec(createPaymentsTableSQL); err != nil {
-    return fmt.Errorf("failed to create payments table: %w", err)
-  }
-  
-  log.Println("Payments table created successfully")
+
+	if _, err := DB.Exec(createPaymentsTableSQL); err != nil {
+		return fmt.Errorf("failed to create payments table: %w", err)
+	}
+
+	log.Println("Payments table created successfully")
 
 	// 创建sale_orders表（如果不存在）
 	createSaleOrdersTableSQL := `
@@ -220,11 +257,11 @@ func InitDB(config *config.DatabaseConfig) error {
 		FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
-	
+
 	if _, err := DB.Exec(createSaleOrdersTableSQL); err != nil {
 		return fmt.Errorf("failed to create sale_orders table: %w", err)
 	}
-	
+
 	log.Println("Sale_orders table created successfully")
 
 	// 创建sale_order_items表（如果不存在）
@@ -246,11 +283,11 @@ func InitDB(config *config.DatabaseConfig) error {
 		FOREIGN KEY (sale_order_id) REFERENCES sale_orders(id) ON DELETE CASCADE
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
-	
+
 	if _, err := DB.Exec(createSaleOrderItemsTableSQL); err != nil {
 		return fmt.Errorf("failed to create sale_order_items table: %w", err)
 	}
-	
+
 	log.Println("Sale_order_items table created successfully")
 
 	// 创建statement_records表（如果不存在）
@@ -273,11 +310,11 @@ func InitDB(config *config.DatabaseConfig) error {
 		UNIQUE KEY unique_source (source_type, source_id)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 	`
-	
+
 	if _, err := DB.Exec(createStatementRecordsTableSQL); err != nil {
 		return fmt.Errorf("failed to create statement_records table: %w", err)
 	}
-	
+
 	log.Println("Statement_records table created successfully")
 
 	// 设置连接池参数
