@@ -75,4 +75,5 @@ export interface SaleOrderListQuery {
   code?: string;
   customerName?: string;
   createTimeRange?: [Date, Date];
+  status?: string;
 }

@@ -1,14 +1,14 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Form, Input, Button, message, Select, DatePicker, InputNumber } from 'antd';
+import { Form, Input, Button, message, Select, DatePicker, InputNumber, App } from 'antd';
 import dayjs from 'dayjs';
 import { CreatePaymentDto, UpdatePaymentDto } from '../../lib/types/payment-types';
 import { Customer } from '../../lib/types/customer-types';
 import { DictionaryItem } from '../../lib/types/dictionary-types';
-import { Setting } from '../../lib/types/setting-types';
+import { SaleOrder } from '../../lib/types/sale-order-types';
 import { dictionaryService } from '../../lib/services/dictionaryService';
 import { settingService } from '../../lib/services/settingService';
-import { formatPrice } from '@/lib/utils/format';
+
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -20,6 +20,7 @@ interface PaymentFormProps {
   isEditing?: boolean;
   visible?: boolean;
   customers: Customer[];
+  saleOrders?: SaleOrder[];
 }
 
 const PaymentForm: React.FC<PaymentFormProps> = ({
@@ -29,13 +30,19 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
   isEditing = false,
   visible = false,
   customers,
+  saleOrders = [],
 }) => {
+  // 获取App上下文，用于使用message实例
+  const { message: antdMessage } = App.useApp();
+  
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [settings, setSettings] = useState<Setting[]>([]);
   const [paymentMethods, setPaymentMethods] = useState<DictionaryItem[]>([]);
   const [accounts, setAccounts] = useState<DictionaryItem[]>([]);
   const [dictLoading, setDictLoading] = useState(true);
+  const [localSaleOrders, setLocalSaleOrders] = useState<SaleOrder[]>(saleOrders);
+  const [selectedCustomerId, setSelectedCustomerId] = useState<number | undefined>();
 
   // 加载设置和字典数据
   const loadDictData = async () => {
@@ -67,7 +74,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
       
     } catch (error) {
       console.error('Failed to load dictionary data:', error);
-      message.error('加载字典数据失败');
+      antdMessage.error('加载字典数据失败');
     } finally {
       setDictLoading(false);
     }
@@ -80,22 +87,43 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
     }
   }, [visible]);
 
+  // 监听saleOrders或selectedCustomerId变化，更新本地订单列表
+  useEffect(() => {
+    setLocalSaleOrders(saleOrders);
+  }, [saleOrders]);
+
+  // 当selectedCustomerId变化时，过滤订单列表
+  useEffect(() => {
+    if (selectedCustomerId) {
+      setLocalSaleOrders(saleOrders.filter(order => order.customerId === selectedCustomerId));
+    } else {
+      setLocalSaleOrders(saleOrders);
+    }
+  }, [selectedCustomerId, saleOrders]);
+
+  // 当initialValues变化时，设置selectedCustomerId
+  useEffect(() => {
+    if (initialValues?.customerId) {
+      setSelectedCustomerId(initialValues.customerId);
+    }
+  }, [initialValues]);
+
   // 监听visible变化，重新初始化表单
   useEffect(() => {
     if (visible) {
-      if (isEditing && initialValues) {
-        // 编辑模式：直接使用initialValues
+      if (initialValues) {
+        // 无论编辑还是新增模式，只要有初始值就使用
         form.setFieldsValue({
           ...initialValues,
           paymentDate: initialValues.paymentDate ? dayjs(initialValues.paymentDate) : undefined
         });
       } else {
-        // 新增模式：重置表单，默认收款日期为今天
+        // 新增模式且无初始值：重置表单，默认收款日期为今天
         form.resetFields();
         form.setFieldValue('paymentDate', dayjs());
       }
     }
-  }, [visible, isEditing, initialValues, form]);
+  }, [visible, initialValues, form]);
 
   const handleSubmit = async () => {
     try {
@@ -130,9 +158,8 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
         >
           <DatePicker
             style={{ width: '100%' }}
-            placeholder="选择日期时间"
-            showTime={{ format: 'HH:mm' }}
-            format="YYYY-MM-DD HH:mm"
+            placeholder="选择日期"
+            format="YYYY-MM-DD"
           />
         </Form.Item>
 
@@ -141,10 +168,57 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
           label="客户名"
           rules={[{ required: true, message: '请选择客户' }]}
         >
-          <Select placeholder="请选择客户" loading={loading}>
+          <Select 
+            placeholder="请选择客户" 
+            loading={loading}
+            allowClear
+            onChange={(value) => {
+              setSelectedCustomerId(value);
+              // 客户变化时，重置订单选择
+              form.setFieldValue('saleOrderIds', []);
+            }}
+          >
             {customers.map(customer => (
-              <Option key={customer.id} value={customer.id}>
-                {customer.code} {customer.name}
+            <Option key={customer.id} value={customer.id}>
+              {customer.code} {customer.name} {customer.phone}
+            </Option>
+          ))}
+          </Select>
+        </Form.Item>
+
+        <Form.Item
+          name="saleOrderIds"
+          label="订单号"
+          rules={[{ required: true, message: '请选择订单号' }]}
+        >
+          <Select
+            mode="multiple"
+            placeholder="请选择订单号"
+            loading={loading}
+            showSearch
+            filterOption={(input, option) => {
+              if (!option || !option.children) return false;
+              // 直接将option.children转换为字符串，因为我们知道它是字符串类型
+              const orderCode = String(option.children);
+              return orderCode.toLowerCase().includes(input.toLowerCase());
+            }}
+            onChange={(values) => {
+              // 选择订单后，如果没有选择客户，则自动填充客户信息
+              if (values.length > 0 && !selectedCustomerId) {
+                const firstOrder = saleOrders.find(order => order.id === values[0]);
+                if (firstOrder) {
+                  form.setFieldValue('customerId', firstOrder.customerId);
+                  setSelectedCustomerId(firstOrder.customerId);
+                }
+              }
+            }}
+          >
+            {saleOrders
+              // 根据选择的客户过滤订单
+              .filter(order => !selectedCustomerId || order.customerId === selectedCustomerId)
+              .map(order => (
+              <Option key={order.id} value={order.id}>
+                {order.code} - {order.customerName}
               </Option>
             ))}
           </Select>
@@ -164,47 +238,38 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
             min={0.01}
             step={0.01}
             formatter={value => `¥ ${value}`}
-            parser={value => parseFloat(value?.replace(/¥\s?/, '') || '0')}
+            parser={(value) => {
+              const parsed = parseFloat(value?.replace(/¥\s?/, '') || '0');
+              return parsed as 0.01;
+            }}
           />
         </Form.Item>
 
         <Form.Item
           name="paymentMethod"
           label="付款方式"
-          rules={[{ required: true, message: '请选择付款方式' }]}
+          rules={[{ required: false, message: '请选择付款方式' }]}
         >
-          <Select placeholder="请选择付款方式" loading={dictLoading}>
-            {paymentMethods.length === 0 ? (
-              <Option value="" disabled>
-                请先设置付款方式字典
+          <Select placeholder="请选择付款方式" loading={dictLoading} allowClear>
+            {paymentMethods.map(method => (
+              <Option key={method.code} value={method.code}>
+                {method.name}
               </Option>
-            ) : (
-              paymentMethods.map(method => (
-                <Option key={method.code} value={method.code}>
-                  {method.name}
-                </Option>
-              ))
-            )}
+            ))}
           </Select>
         </Form.Item>
 
         <Form.Item
           name="account"
           label="收款账户"
-          rules={[{ required: true, message: '请选择收款账户' }]}
+          rules={[{ required: false, message: '请选择收款账户' }]}
         >
-          <Select placeholder="请选择收款账户" loading={dictLoading}>
-            {accounts.length === 0 ? (
-              <Option value="" disabled>
-                请先设置收款账户字典
+          <Select placeholder="请选择收款账户" loading={dictLoading} allowClear>
+            {accounts.map(account => (
+              <Option key={account.code} value={account.code}>
+                {account.name}
               </Option>
-            ) : (
-              accounts.map(account => (
-                <Option key={account.code} value={account.code}>
-                  {account.name}
-                </Option>
-              ))
-            )}
+            ))}
           </Select>
         </Form.Item>
 

@@ -6,15 +6,14 @@ import {
   Input,
   Button,
   DatePicker,
-  Select,
   Table,
   InputNumber,
   Space,
-  message,
   Divider,
   Modal,
   Spin,
   App,
+  Select,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,8 +29,8 @@ import { productService } from '@/lib/services/productService';
 import { customerService } from '@/lib/services/customerService';
 import { formatPrice } from '@/lib/utils/format';
 
-const { Option } = Select;
 const { TextArea } = Input;
+const { Option } = Select;
 
 interface SaleOrderFormProps {
   initialValues?: Partial<SaleOrder> | null;
@@ -44,7 +43,7 @@ interface SaleOrderFormProps {
 interface ProductSelectModalProps {
   visible: boolean;
   onCancel: () => void;
-  onSelect: (product: Product) => void;
+  onSelect: (products: Product[]) => void;
 }
 
 // 商品选择组件
@@ -52,12 +51,14 @@ const ProductSelectModal: React.FC<ProductSelectModalProps> = ({ visible, onCanc
   const [products, setProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState('');
   const [loading, setLoading] = useState(true);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>([]);
   const { message: antdMessage } = App.useApp();
 
   useEffect(() => {
     if (visible) {
       fetchProducts();
+      // 每次打开时清除上次选择状态
+      setSelectedProducts([]);
     }
   }, [visible]);
 
@@ -77,8 +78,18 @@ const ProductSelectModal: React.FC<ProductSelectModalProps> = ({ visible, onCanc
   const handleSearch = async () => {
     try {
       setLoading(true);
-      // TODO: 实现商品搜索功能
-      antdMessage.info('商品搜索功能待实现');
+      // 实现商品搜索功能，根据搜索文本过滤商品
+      const data = await productService.getProducts();
+      const filteredProducts = data.filter(product => {
+        if (!searchText) return true;
+        return (
+          product.name.includes(searchText) ||
+          product.code.includes(searchText) ||
+          product.category.includes(searchText) ||
+          product.brand.includes(searchText)
+        );
+      });
+      setProducts(Array.isArray(filteredProducts) ? filteredProducts : []);
     } catch (error) {
       console.error('Failed to search products:', error);
       antdMessage.error('搜索商品失败');
@@ -88,12 +99,12 @@ const ProductSelectModal: React.FC<ProductSelectModalProps> = ({ visible, onCanc
   };
 
   const handleConfirm = () => {
-    if (selectedProduct) {
-      onSelect(selectedProduct);
-      onCancel();
-    } else {
+    if (selectedProducts.length === 0) {
       antdMessage.warning('请选择商品');
+      return;
     }
+    onSelect(selectedProducts);
+    onCancel();
   };
 
   return (
@@ -103,15 +114,24 @@ const ProductSelectModal: React.FC<ProductSelectModalProps> = ({ visible, onCanc
       onOk={handleConfirm}
       onCancel={onCancel}
       width={800}
+      footer={[
+        <Button key="back" onClick={onCancel}>
+          取消
+        </Button>,
+        <Button key="submit" type="primary" onClick={handleConfirm}>
+          确定选择（{selectedProducts.length}个）
+        </Button>,
+      ]}
     >
       <div style={{ marginBottom: 16, display: 'flex', gap: 12 }}>
         <Input
-          placeholder="搜索商品"
+          placeholder="搜索商品名称、编号、分类或品牌"
           allowClear
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
           prefix={<SearchOutlined />}
-          style={{ width: 300 }}
+          onPressEnter={handleSearch}
+          style={{ flex: 1 }}
         />
         <Button type="primary" onClick={handleSearch}>
           搜索
@@ -162,16 +182,15 @@ const ProductSelectModal: React.FC<ProductSelectModalProps> = ({ visible, onCanc
               align: 'right',
             },
           ]}
-          pagination={{
-            pageSize: 5,
-            showSizeChanger: false,
-          }}
+          pagination={{ pageSize: 10 }}
           rowSelection={{
-            type: 'radio',
+            type: 'checkbox',
+            selectedRowKeys: selectedProducts.map(p => p.id),
             onChange: (_, selectedRows) => {
-              setSelectedProduct(selectedRows[0]);
+              setSelectedProducts(selectedRows as Product[]);
             },
           }}
+          style={{ width: '100%' }}
         />
       </Spin>
     </Modal>
@@ -192,7 +211,6 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [items, setItems] = useState<(CreateSaleOrderItemDto | UpdateSaleOrderItemDto & { uniqueKey?: string })[]>([]);
   const [productSelectModalVisible, setProductSelectModalVisible] = useState(false);
-  const [selectedItemIndex, setSelectedItemIndex] = useState<number | null>(null);
   const [totalInfo, setTotalInfo] = useState({
     totalOriginalAmount: 0,
     totalDiscountAmount: 0,
@@ -220,32 +238,45 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       if (isEditing && initialValues) {
         // 编辑模式：使用初始值填充表单
         const orderCode = initialValues.code || '';
-        form.setFieldsValue({
-          createTime: initialValues.createTime ? dayjs(initialValues.createTime) : dayjs(),
-          customerId: initialValues.customerId,
-          remark: initialValues.remark,
-          code: orderCode, // 设置表单编号字段，确保与状态一致
-        });
-        setOrderCode(orderCode);
+        const customerId = initialValues.customerId || 0;
+        
+        // 处理客户ID，保持数字类型
+        let customerFieldValue = undefined;
+        if (customerId > 0) {
+          customerFieldValue = customerId; // 直接使用数字类型，不转换为字符串
+        }
+        
         // 为每个商品项添加uniqueKey
         const itemsWithKeys = (initialValues.items || []).map(item => ({
           ...item,
           uniqueKey: generateUniqueKey(),
         }));
+        
+        form.setFieldsValue({
+          createTime: initialValues.createTime ? dayjs(initialValues.createTime) : dayjs(),
+          customerId: customerFieldValue,
+          remark: initialValues.remark,
+          code: orderCode,
+          items: itemsWithKeys, // 将商品信息设置到表单字段值中
+        });
+        setOrderCode(orderCode);
         setItems(itemsWithKeys);
         // 设置客户信息
-        fetchCustomerById(initialValues.customerId);
+        if (customerId > 0) {
+          fetchCustomerById(customerId);
+        }
       } else {
         // 新增模式：重置表单并生成订单号
         form.setFieldsValue({
           createTime: dayjs(),
+          customerId: undefined, // 重置客户选择
         });
         generateOrderCode();
         setItems([]);
         setSelectedCustomer(null);
       }
     }
-  }, [visible, isEditing, initialValues, form]);
+  }, [visible, isEditing, initialValues, form, customers]);
 
   // 计算总价
   useEffect(() => {
@@ -269,11 +300,15 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
 
   const fetchCustomerById = async (customerId: number) => {
     try {
+      setLoading(true);
       const customer = await customerService.getCustomerById(customerId);
       setSelectedCustomer(customer);
+      // 选择后不需要再次设置表单值，因为AutoComplete已经通过labelInValue属性设置了正确的值
     } catch (error) {
       console.error('Failed to fetch customer:', error);
-      antdMessage.error('获取客户信息失败');
+      // 只在控制台记录错误，不向用户显示，避免频繁报错影响体验
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -299,9 +334,10 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
     }
   };
 
-  // 处理客户选择
-  const handleCustomerChange = (customerId: number) => {
-    fetchCustomerById(customerId);
+  // 处理客户选择（仅在用户选择时触发）
+  const handleCustomerSelect = (value: number) => {
+    // 调用fetchCustomerById获取客户信息
+    fetchCustomerById(value);
   };
 
   // 计算单项总金额
@@ -325,22 +361,6 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
     setItems(newItems);
   };
 
-  // 添加商品行
-  const addItem = () => {
-    setItems([...items, {
-      productId: 0,
-      productCode: '',
-      productName: '',
-      quantity: 0,
-      unit: '',
-      price: 0,
-      discountAmount: 0,
-      totalAmount: 0,
-      remark: '',
-      uniqueKey: generateUniqueKey(),
-    }]);
-  };
-
   // 删除商品行
   const deleteItem = (index: number) => {
     if (items.length <= 1) {
@@ -353,27 +373,30 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
 
   // 打开商品选择弹窗
   const openProductSelectModal = () => {
-    setSelectedItemIndex(null);
     setProductSelectModalVisible(true);
   };
 
   // 选择商品
-  const handleProductSelect = (product: Product) => {
+  const handleProductSelect = (products: Product[]) => {
     // 选择商品后添加新行
-    const newItem: CreateSaleOrderItemDto & { uniqueKey: string } = {
-      productId: product.id,
-      productCode: product.code,
-      productName: product.name,
-      unit: product.unit,
-      price: product.price,
-      quantity: 1, // 默认数量为1
-      discountAmount: 0,
-      totalAmount: product.price * 1, // 默认数量为1，计算总价
-      remark: '',
-      uniqueKey: generateUniqueKey(),
-    };
+    const newItems = [...items];
     
-    const newItems = [...items, newItem];
+    products.forEach(product => {
+      const newItem: CreateSaleOrderItemDto & { uniqueKey: string } = {
+        productId: product.id,
+        productCode: product.code,
+        productName: product.name,
+        unit: product.unit,
+        price: product.price,
+        quantity: 1, // 默认数量为1
+        discountAmount: 0,
+        totalAmount: product.price * 1, // 默认数量为1，计算总价
+        remark: '',
+        uniqueKey: generateUniqueKey(),
+      };
+      newItems.push(newItem);
+    });
+    
     setItems(newItems);
     
     // 更新Form表单数据，确保新添加的商品行被Form组件正确识别
@@ -382,7 +405,6 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
     });
     
     setProductSelectModalVisible(false);
-    setSelectedItemIndex(null);
   };
 
   // 表单提交处理
@@ -407,7 +429,7 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       const formattedValues = {
         code: orderCode,
         createTime: values.createTime.format('YYYY-MM-DD'),
-        customerId: values.customerId,
+        customerId: parseInt(values.customerId), // 转换为number类型
         items: items.map(item => ({
           ...item,
           totalAmount: calculateItemTotal(item),
@@ -417,7 +439,6 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       
       setLoading(true);
       await onSubmit(formattedValues as CreateSaleOrderDto | UpdateSaleOrderDto);
-      antdMessage.success(isEditing ? '销售订单更新成功' : '销售订单创建成功');
       if (onCancel) onCancel();
     } catch (error) {
       console.error('Submit failed:', error);
@@ -434,34 +455,13 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
   // 商品表格列配置
   const itemColumns = [
     {
-      title: '操作',
-      key: 'action',
-      width: 80,
-      minWidth: 80,
-      resizable: true,
-      render: (_, __, index: number) => (
-        <Space size="small">
-          <Button
-            type="link"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => deleteItem(index)}
-            size="small"
-            disabled={items.length <= 0}
-          >
-            删除
-          </Button>
-        </Space>
-      ),
-    },
-    {
       title: '商品编号',
       dataIndex: 'productCode',
       key: 'productCode',
-      width: 120,
+      width: '12%',
       minWidth: 120,
       resizable: true,
-      render: (_, __, index: number) => (
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'productCode']}
           noStyle
@@ -478,10 +478,10 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       title: '商品名',
       dataIndex: 'productName',
       key: 'productName',
-      width: 180,
-      minWidth: 180,
+      width: '30%',
+      minWidth: 200,
       resizable: true,
-      render: (_, __, index: number) => (
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'productName']}
           noStyle
@@ -495,14 +495,34 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       ),
     },
     {
+      title: '单位',
+      dataIndex: 'unit',
+      key: 'unit',
+      width: '8%',
+      minWidth: 80,
+      resizable: true,
+      render: (_: any, _record: any, index: number) => (
+        <Form.Item
+          name={['items', index, 'unit']}
+          noStyle
+        >
+          <Input
+            placeholder="单位"
+            value={items[index].unit}
+            onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
+          />
+        </Form.Item>
+      ),
+    },
+    {
       title: '数量',
       dataIndex: 'quantity',
       key: 'quantity',
-      width: 100,
+      width: '10%',
       minWidth: 100,
       resizable: true,
-      align: 'right',
-      render: (_, __, index: number) => (
+      align: 'right' as const,
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'quantity']}
           noStyle
@@ -519,34 +539,14 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       ),
     },
     {
-      title: '单位',
-      dataIndex: 'unit',
-      key: 'unit',
-      width: 80,
-      minWidth: 80,
-      resizable: true,
-      render: (_, __, index: number) => (
-        <Form.Item
-          name={['items', index, 'unit']}
-          noStyle
-        >
-          <Input
-            placeholder="单位"
-            value={items[index].unit}
-            onChange={(e) => handleItemChange(index, 'unit', e.target.value)}
-          />
-        </Form.Item>
-      ),
-    },
-    {
       title: '单价',
       dataIndex: 'price',
       key: 'price',
-      width: 120,
+      width: '12%',
       minWidth: 120,
       resizable: true,
-      align: 'right',
-      render: (_, __, index: number) => (
+      align: 'right' as const,
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'price']}
           noStyle
@@ -568,11 +568,11 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       title: '优惠金额',
       dataIndex: 'discountAmount',
       key: 'discountAmount',
-      width: 120,
+      width: '12%',
       minWidth: 120,
       resizable: true,
-      align: 'right',
-      render: (_, __, index: number) => (
+      align: 'right' as const,
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'discountAmount']}
           noStyle
@@ -591,23 +591,23 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
       ),
     },
     {
-      title: '合计金额',
+      title: '小计',
       dataIndex: 'totalAmount',
       key: 'totalAmount',
-      width: 120,
+      width: '12%',
       minWidth: 120,
       resizable: true,
-      align: 'right',
+      align: 'right' as const,
       render: (totalAmount: number) => formatPrice(totalAmount),
     },
     {
       title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 150,
-      minWidth: 150,
+      width: '12%',
+      minWidth: 120,
       resizable: true,
-      render: (_, __, index: number) => (
+      render: (_: any, _record: any, index: number) => (
         <Form.Item
           name={['items', index, 'remark']}
           noStyle
@@ -618,6 +618,25 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
             onChange={(e) => handleItemChange(index, 'remark', e.target.value)}
           />
         </Form.Item>
+      ),
+    },
+    {
+      title: '',
+      key: 'action',
+      width: '5%',
+      minWidth: 60,
+      resizable: true,
+      align: 'center' as const,
+      render: (_: any, _record: any, index: number) => (
+        <Button
+          type="link"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => deleteItem(index)}
+          size="small"
+          disabled={items.length <= 1}
+          iconOnly
+        />
       ),
     },
   ];
@@ -641,10 +660,9 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
               >
                 <DatePicker
                   style={{ width: '100%' }}
-                  placeholder="选择日期时间"
+                  placeholder="选择日期"
                   allowClear={false}
-                  showTime={{ format: 'HH:mm' }}
-                  format="YYYY-MM-DD HH:mm"
+                  format="YYYY-MM-DD"
                 />
               </Form.Item>
               <Form.Item
@@ -666,20 +684,34 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
 
           {/* 客户信息 */}
           <div style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h3 style={{ margin: 0 }}>客户信息</h3>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: '16px' }}>
+              <h3 style={{ margin: 0 }}>客户信息 <span style={{ color: '#ff4d4f' }}>*</span></h3>
               <Form.Item
                 name="customerId"
                 rules={[{ required: true, message: '请选择客户' }]}
+                noStyle
               >
                 <Select
-                  placeholder="选择客户"
-                  onChange={handleCustomerChange}
-                  style={{ width: 200 }}
+                  placeholder="输入客户名称或手机号筛选"
+                  style={{ width: 300 }}
+                  allowClear
+                  onSelect={handleCustomerSelect}
+                  showSearch
+                  filterOption={(input, option) => {
+                    if (!option) return false;
+                    const customer = customers.find(c => c.id === option.value);
+                    if (!customer) return false;
+                    const searchValue = input.toLowerCase();
+                    return (
+                      customer.code.toLowerCase().includes(searchValue) ||
+                      customer.name.toLowerCase().includes(searchValue) ||
+                      customer.phone.toLowerCase().includes(searchValue)
+                    );
+                  }}
                 >
                   {customers.map(customer => (
                     <Option key={customer.id} value={customer.id}>
-                      {customer.name} ({customer.phone})
+                      {customer.code} {customer.name} {customer.phone}
                     </Option>
                   ))}
                 </Select>
@@ -713,7 +745,7 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
 
           {/* 商品信息 */}
           <div style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: '16px' }}>
               <h3 style={{ margin: 0 }}>商品信息</h3>
               <Button
                 type="primary"
@@ -730,24 +762,16 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
               pagination={false}
               bordered
               summary={() => (
-                <Table.Summary>
-                  <Table.Summary.Row>
-                    <Table.Summary.Cell colSpan={6} align="right">
-                      <strong>合计：</strong>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <strong>{formatPrice(totalInfo.totalOriginalAmount)}</strong>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <strong>{formatPrice(totalInfo.totalDiscountAmount)}</strong>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell align="right">
-                      <strong style={{ color: '#ff4d4f' }}>{formatPrice(totalInfo.totalAmount)}</strong>
-                    </Table.Summary.Cell>
-                    <Table.Summary.Cell colSpan={2} />
-                  </Table.Summary.Row>
-                </Table.Summary>
-              )}
+              <Table.Summary>
+                <Table.Summary.Row>
+                  <Table.Summary.Cell index={0} colSpan={9} align="right" >
+                    <span style={{ marginRight: '40px' }}>原价总金额：{formatPrice(totalInfo.totalOriginalAmount)}</span>
+                    <span style={{ marginRight: '40px' }}>优惠总金额：{formatPrice(totalInfo.totalDiscountAmount)}</span>
+                    <strong style={{ marginRight: '180px' }}>应付总金额：{formatPrice(totalInfo.totalAmount)}</strong>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
             />
           </div>
 
@@ -781,7 +805,6 @@ const SaleOrderForm: React.FC<SaleOrderFormProps> = ({
         visible={productSelectModalVisible}
         onCancel={() => {
           setProductSelectModalVisible(false);
-          setSelectedItemIndex(null);
         }}
         onSelect={handleProductSelect}
       />

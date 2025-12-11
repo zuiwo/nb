@@ -1,7 +1,7 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Drawer, message, Input, Select, Space, Card, Spin, Switch, Dropdown, MenuProps, Modal } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EllipsisOutlined } from '@ant-design/icons';
+import { Table, Button, Drawer, message, Input, Select, Space, Card, Spin, Switch, Dropdown, MenuProps, Modal, Upload, Popconfirm } from 'antd';
+import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined, EllipsisOutlined, UploadOutlined, DownloadOutlined } from '@ant-design/icons';
 import ProductForm from '@/ui/forms/ProductForm';
 import { productService } from '@/lib/services/productService';
 import { settingService } from '@/lib/services/settingService';
@@ -10,6 +10,7 @@ import { Product, CreateProductDto, UpdateProductDto } from '@/lib/types/product
 import { Setting } from '@/lib/types/setting-types';
 import { DictionaryItem } from '@/lib/types/dictionary-types';
 import { formatPrice, formatDate } from '@/lib/utils/format';
+import * as XLSX from 'xlsx';
 
 const { Option } = Select;
 const { Search } = Input;
@@ -39,6 +40,11 @@ const ProductsPage = () => {
   const [brandOptions, setBrandOptions] = useState<DictionaryItem[]>([]);
   const [unitOptions, setUnitOptions] = useState<DictionaryItem[]>([]);
   const [settings, setSettings] = useState<Setting[]>([]);
+  // 导入导出相关状态
+  const [isImportModalVisible, setIsImportModalVisible] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  // 使用useMessage hook获取message实例
+  const [messageApi, contextHolder] = message.useMessage();
 
   // 加载产品和字典数据
   useEffect(() => {
@@ -186,6 +192,101 @@ const ProductsPage = () => {
     }
   };
 
+  // 导入相关函数
+  const handleImport = async (file: File) => {
+    setImportLoading(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      
+      // 转换数据格式
+      const productsToImport = jsonData.map((item: any) => ({
+        name: item['产品名称'],
+        code: item['产品编码'],
+        category: item['产品分类'],
+        brand: item['品牌'],
+        unit: item['单位'],
+        price: parseFloat(item['价格']) || 0,
+        status: item['状态'] === '启用' ? 1 : 0,
+        remark: item['备注']
+      }));
+      
+      // 批量导入产品
+      for (const product of productsToImport) {
+        await productService.createProduct(product as CreateProductDto);
+      }
+      
+      messageApi.success('导入成功');
+      setIsImportModalVisible(false);
+      fetchProducts();
+    } catch (error) {
+      console.error('导入失败:', error);
+      messageApi.error('导入失败，请检查文件格式');
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  // 导出相关函数
+  const handleExport = (type: 'all' | 'filter' | 'selected') => {
+    let dataToExport: Product[] = [];
+    
+    if (type === 'all') {
+      dataToExport = products;
+    } else if (type === 'filter') {
+      dataToExport = filteredProducts;
+    } else if (type === 'selected') {
+      const selectedIds = selectedRowKeys.map(key => Number(key));
+      dataToExport = products.filter(product => selectedIds.includes(product.id));
+    }
+    
+    // 转换为导出格式
+    const exportData = dataToExport.map(product => ({
+      '产品编码': product.code,
+      '产品名称': product.name,
+      '产品分类': product.category,
+      '品牌': product.brand,
+      '单位': product.unit,
+      '价格': product.price,
+      '状态': product.status === 1 ? '启用' : '禁用',
+      '备注': product.remark
+    }));
+    
+    // 创建工作簿和工作表
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '产品列表');
+    
+    // 导出文件
+    XLSX.writeFile(workbook, `产品列表_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    messageApi.success('导出成功');
+  };
+
+  // 下载导入模板
+  const handleDownloadTemplate = () => {
+    const templateData = [
+      {
+        '产品编码': 'PROD001',
+        '产品名称': '示例产品',
+        '产品分类': '分类1',
+        '品牌': '品牌1',
+        '单位': '个',
+        '价格': 100,
+        '状态': '启用',
+        '备注': '示例备注'
+      }
+    ];
+    
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '产品模板');
+    XLSX.writeFile(workbook, '产品导入模板.xlsx');
+    messageApi.success('模板下载成功');
+  };
+
   const showCreateModal = () => {
     setIsEditing(false);
     setCurrentProduct(null);
@@ -275,7 +376,7 @@ const ProductsPage = () => {
       ),
     },
     {
-      title: '操作',
+      title: '',
       key: 'action',
       width: 120,
       fixed: 'right',
@@ -289,14 +390,20 @@ const ProductsPage = () => {
           >
             编辑
           </Button>
-          <Button
-            type="link"
-            danger
-            onClick={() => handleDelete(record.id)}
-            size="small"
-          >
-            删除
-          </Button>
+          <Popconfirm
+              title="确定要删除这个产品吗？"
+              onConfirm={() => handleDelete(record.id)}
+              okText="确认"
+              cancelText="取消"
+            >
+              <Button
+                type="link"
+                danger
+                size="small"
+              >
+                删除
+              </Button>
+            </Popconfirm>
         </Space>
       ),
     },
@@ -313,6 +420,7 @@ const ProductsPage = () => {
 
   return (
     <Spin spinning={loading} style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      {contextHolder}
       <div style={{ padding: 0, width: '100%', overflowX: 'hidden' }}>
         {/* 标题行 */}
         <div style={{ marginBottom: 16 }}>
@@ -377,9 +485,48 @@ const ProductsPage = () => {
           <Button type="primary" onClick={showCreateModal}>
             添加产品
           </Button>
-          <Button danger onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>
-            批量删除
+          <Button
+            type="default"
+            icon={<UploadOutlined />}
+            onClick={() => setIsImportModalVisible(true)}
+          >
+            导入
           </Button>
+          <Dropdown
+            menu={{
+              items: [
+                {
+                  key: 'all',
+                  label: '全部',
+                  onClick: () => handleExport('all')
+                },
+                {
+                  key: 'filter',
+                  label: '查询条件',
+                  onClick: () => handleExport('filter')
+                },
+                {
+                  key: 'selected',
+                  label: '勾选',
+                  onClick: () => handleExport('selected')
+                }
+              ]
+            }}
+          >
+            <Button type="default" icon={<DownloadOutlined />}>
+              导出
+            </Button>
+          </Dropdown>
+          <Popconfirm
+            title={`确定要删除选中的 ${selectedRowKeys.length} 个产品吗？`}
+            onConfirm={handleBatchDelete}
+            okText="确认"
+            cancelText="取消"
+          >
+            <Button danger onClick={handleBatchDelete} disabled={selectedRowKeys.length === 0}>
+              批量删除 ({selectedRowKeys.length})
+            </Button>
+          </Popconfirm>
         </div>
         
         {/* 产品列表 */}
@@ -445,6 +592,38 @@ const ProductsPage = () => {
             visible={isDrawerVisible}
           />
         </Drawer>
+
+        {/* 导入弹窗 */}
+        <Modal
+          title="导入产品"
+          open={isImportModalVisible}
+          onCancel={() => setIsImportModalVisible(false)}
+          footer={null}
+          width={600}
+        >
+          <div style={{ padding: '20px 0' }}>
+            <div style={{ marginBottom: 16 }}>
+              <Button type="default" onClick={handleDownloadTemplate}>
+                下载导入模板
+              </Button>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Upload
+                beforeUpload={handleImport}
+                showUploadList={false}
+                accept=".xlsx, .xls"
+              >
+                <Button type="primary" loading={importLoading}>
+                  点击上传文件
+                </Button>
+              </Upload>
+            </div>
+            <div style={{ color: '#666', fontSize: '12px' }}>
+              <p>支持格式：.xlsx, .xls</p>
+              <p>请按照模板格式填写数据，确保字段完整</p>
+            </div>
+          </div>
+        </Modal>
       </div>
     </Spin>
   );

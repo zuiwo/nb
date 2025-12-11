@@ -5,6 +5,7 @@ export type Payment = {
   paymentDate: string;
   customerId: number;
   customerName: string;
+  saleOrderIds: number[];
   amount: number;
   paymentMethod: string;
   account: string;
@@ -17,6 +18,7 @@ export type Payment = {
 export type CreatePaymentDto = {
   paymentDate: string;
   customerId: number;
+  saleOrderIds: number[];
   amount: number;
   paymentMethod: string;
   account: string;
@@ -27,6 +29,7 @@ export type CreatePaymentDto = {
 export type UpdatePaymentDto = {
   paymentDate?: string;
   customerId?: number;
+  saleOrderIds?: number[];
   amount?: number;
   paymentMethod?: string;
   account?: string;

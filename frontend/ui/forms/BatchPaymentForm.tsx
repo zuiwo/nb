@@ -1,11 +1,12 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { Input, Button, Select, DatePicker, InputNumber, Table, Space, App } from 'antd';
+import { Form, Input, Button, message, Select, DatePicker, Table, InputNumber, App } from 'antd';
 import { PlusOutlined, DeleteOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { CreatePaymentDto } from '../../lib/types/payment-types';
 import { Customer } from '../../lib/types/customer-types';
 import { DictionaryItem } from '../../lib/types/dictionary-types';
+import { SaleOrder } from '../../lib/types/sale-order-types';
 import { dictionaryService } from '../../lib/services/dictionaryService';
 import { settingService } from '../../lib/services/settingService';
 
@@ -16,6 +17,7 @@ interface BatchPaymentFormProps {
   onCancel?: () => void;
   visible?: boolean;
   customers: Customer[];
+  saleOrders?: SaleOrder[];
 }
 
 const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
@@ -23,10 +25,11 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
   onCancel,
   visible = false,
   customers,
+  saleOrders = [],
 }) => {
   const { message } = App.useApp();
   const [payments, setPayments] = useState<CreatePaymentDto[]>([
-    { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, amount: 0, paymentMethod: '', account: '' }
+    { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, saleOrderIds: [], amount: 0, paymentMethod: '', account: '' }
   ]);
   const [paymentMethods, setPaymentMethods] = useState<DictionaryItem[]>([]);
   const [accounts, setAccounts] = useState<DictionaryItem[]>([]);
@@ -38,7 +41,6 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
       setDictLoading(true);
       // 获取设置数据
       const settingsData = await settingService.getSettings();
-      setSettings(settingsData);
       
       // 获取字典映射关系
       const paymentMethodDictCode = settingsData.find(s => s.key === 'payment_method_dict')?.value || '';
@@ -80,7 +82,7 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
     if (visible) {
       // 重置表单，默认添加一行
       setPayments([
-        { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, amount: 0, paymentMethod: '', account: '' }
+        { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, saleOrderIds: [], amount: 0, paymentMethod: '', account: '' }
       ]);
     }
   }, [visible]);
@@ -89,7 +91,7 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
   const addRow = () => {
     setPayments([
       ...payments,
-      { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, amount: 0, paymentMethod: '', account: '' }
+      { paymentDate: dayjs().format('YYYY-MM-DD'), customerId: 0, saleOrderIds: [], amount: 0, paymentMethod: '', account: '' }
     ]);
   };
 
@@ -121,9 +123,8 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
         return (
           payment.paymentDate &&
           payment.customerId > 0 &&
-          payment.amount > 0 &&
-          payment.paymentMethod &&
-          payment.account
+          payment.amount > 0
+          // paymentMethod 和 account 不再必填
         );
       });
 
@@ -180,7 +181,35 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
         >
           {customers.map(customer => (
             <Option key={customer.id} value={customer.id}>
-              {customer.code} {customer.name}
+              {customer.code} {customer.name} {customer.phone}
+            </Option>
+          ))}
+        </Select>
+      ),
+    },
+    {
+      title: '订单号',
+      dataIndex: 'saleOrderIds',
+      key: 'saleOrderIds',
+      width: 180,
+      render: (_: number[], __: CreatePaymentDto, index: number) => (
+        <Select
+          mode="multiple"
+          style={{ width: '100%' }}
+          placeholder="选择订单号"
+          value={payments[index].saleOrderIds || undefined}
+          onChange={(value) => updateRow(index, 'saleOrderIds', value)}
+          showSearch
+          filterOption={(input, option) => {
+            if (!option || !option.children) return false;
+            // 直接将option.children转换为字符串，因为我们知道它是字符串类型
+            const orderCode = String(option.children);
+            return orderCode.toLowerCase().includes(input.toLowerCase());
+          }}
+        >
+          {saleOrders.map(order => (
+            <Option key={order.id} value={order.id}>
+              {order.code} - {order.customerName}
             </Option>
           ))}
         </Select>
@@ -216,18 +245,13 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
           value={payments[index].paymentMethod || undefined}
           onChange={(value) => updateRow(index, 'paymentMethod', value)}
           loading={dictLoading}
+          allowClear
         >
-          {paymentMethods.length === 0 ? (
-            <Option value="" disabled>
-              请先设置付款方式字典
+          {paymentMethods.map(method => (
+            <Option key={method.code} value={method.code}>
+              {method.name}
             </Option>
-          ) : (
-            paymentMethods.map(method => (
-              <Option key={method.code} value={method.code}>
-                {method.name}
-              </Option>
-            ))
-          )}
+          ))}
         </Select>
       ),
     },
@@ -243,18 +267,13 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
           value={payments[index].account || undefined}
           onChange={(value) => updateRow(index, 'account', value)}
           loading={dictLoading}
+          allowClear
         >
-          {accounts.length === 0 ? (
-            <Option value="" disabled>
-              请先设置收款账户字典
+          {accounts.map(account => (
+            <Option key={account.code} value={account.code}>
+              {account.name}
             </Option>
-          ) : (
-            accounts.map(account => (
-              <Option key={account.code} value={account.code}>
-                {account.name}
-              </Option>
-            ))
-          )}
+          ))}
         </Select>
       ),
     },
@@ -286,20 +305,17 @@ const BatchPaymentForm: React.FC<BatchPaymentFormProps> = ({
       ),
     },
     {
-      title: '操作',
+      title: '',
       key: 'action',
-      width: 80,
+      width: 60,
       render: (_: string, __: CreatePaymentDto, index: number) => (
-        <Space size="middle">
-          <Button
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => removeRow(index)}
-          >
-            删除
-          </Button>
-        </Space>
+        <Button
+          type="text"
+          danger
+          icon={<DeleteOutlined />}
+          onClick={() => removeRow(index)}
+          iconOnly
+        />
       ),
     },
   ];

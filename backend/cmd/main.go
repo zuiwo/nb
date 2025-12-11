@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -138,7 +139,7 @@ type Customer struct {
 type CreateCustomerRequest struct {
 	Name     string `json:"name" binding:"required"`
 	Code     string `json:"code"`
-	Phone    string `json:"phone" binding:"required"`
+	Phone    string `json:"phone"`
 	Province string `json:"province"`
 	City     string `json:"city"`
 	District string `json:"district"`
@@ -206,6 +207,7 @@ type Payment struct {
 	PaymentDate   string  `json:"paymentDate"`
 	CustomerID    int     `json:"customerId"`
 	CustomerName  string  `json:"customerName"`
+	SaleOrderIDs  []int   `json:"saleOrderIds"`
 	Amount        float64 `json:"amount"`
 	PaymentMethod string  `json:"paymentMethod"`
 	Account       string  `json:"account"`
@@ -219,9 +221,10 @@ type Payment struct {
 type CreatePaymentRequest struct {
 	PaymentDate   string  `json:"paymentDate" binding:"required"`
 	CustomerID    int     `json:"customerId" binding:"required"`
+	SaleOrderIDs  []int   `json:"saleOrderIds" binding:"required"`
 	Amount        float64 `json:"amount" binding:"required,gt=0"`
-	PaymentMethod string  `json:"paymentMethod" binding:"required"`
-	Account       string  `json:"account" binding:"required"`
+	PaymentMethod string  `json:"paymentMethod"`
+	Account       string  `json:"account"`
 	PayerCompany  string  `json:"payerCompany"`
 	Remark        string  `json:"remark"`
 }
@@ -230,6 +233,7 @@ type CreatePaymentRequest struct {
 type UpdatePaymentRequest struct {
 	PaymentDate   string  `json:"paymentDate"`
 	CustomerID    int     `json:"customerId"`
+	SaleOrderIDs  []int   `json:"saleOrderIds"`
 	Amount        float64 `json:"amount" binding:"omitempty,gt=0"`
 	PaymentMethod string  `json:"paymentMethod"`
 	Account       string  `json:"account"`
@@ -588,7 +592,7 @@ func getCustomerSaleOrders(customerID int) ([]SaleOrder, error) {
 
 // getCustomerPayments 获取客户的所有收款记录
 func getCustomerPayments(customerID int) ([]Payment, error) {
-	rows, err := database.DB.Query("SELECT id, code, payment_date, customer_id, amount, payment_method, account, payer_company, remark, created_at, updated_at FROM payments WHERE customer_id = ?", customerID)
+	rows, err := database.DB.Query("SELECT id, code, payment_date, customer_id, sale_order_ids, amount, payment_method, account, payer_company, remark, created_at, updated_at FROM payments WHERE customer_id = ?", customerID)
 	if err != nil {
 		return nil, err
 	}
@@ -597,9 +601,30 @@ func getCustomerPayments(customerID int) ([]Payment, error) {
 	var payments []Payment
 	for rows.Next() {
 		var p Payment
-		if err := rows.Scan(&p.ID, &p.Code, &p.PaymentDate, &p.CustomerID, &p.Amount, &p.PaymentMethod, &p.Account, &p.PayerCompany, &p.Remark, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		var saleOrderIdsJSON []byte
+		if err := rows.Scan(&p.ID, &p.Code, &p.PaymentDate, &p.CustomerID, &saleOrderIdsJSON, &p.Amount, &p.PaymentMethod, &p.Account, &p.PayerCompany, &p.Remark, &p.CreatedAt, &p.UpdatedAt); err != nil {
 			return nil, err
 		}
+
+		// 解析sale_order_ids JSON
+		if saleOrderIdsJSON != nil && len(saleOrderIdsJSON) > 0 {
+			// 处理空字符串情况
+			saleOrderIdsStr := string(saleOrderIdsJSON)
+			if saleOrderIdsStr != "" && saleOrderIdsStr != "null" {
+				err = json.Unmarshal(saleOrderIdsJSON, &p.SaleOrderIDs)
+				if err != nil {
+					// JSON解析失败时，设置为空数组，增强容错性
+					p.SaleOrderIDs = []int{}
+				}
+			} else {
+				// 空字符串或null时，设置为空数组
+				p.SaleOrderIDs = []int{}
+			}
+		} else {
+			// 未设置值时，设置为空数组
+			p.SaleOrderIDs = []int{}
+		}
+
 		payments = append(payments, p)
 	}
 
@@ -2903,7 +2928,7 @@ func getPayments(c *gin.Context) {
 	}
 
 	rows, err := database.DB.Query(`
-		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
+		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, p.sale_order_ids, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
 		FROM payments p 
 		LEFT JOIN customers c ON p.customer_id = c.id 
 		ORDER BY p.created_at DESC
@@ -2917,10 +2942,31 @@ func getPayments(c *gin.Context) {
 	var payments []Payment
 	for rows.Next() {
 		var payment Payment
-		if err := rows.Scan(&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt); err != nil {
+		var saleOrderIdsJSON []byte
+		if err := rows.Scan(&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &saleOrderIdsJSON, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan payment: " + err.Error()})
 			return
 		}
+
+		// 解析sale_order_ids JSON
+		if saleOrderIdsJSON != nil && len(saleOrderIdsJSON) > 0 {
+			// 处理空字符串情况
+			saleOrderIdsStr := string(saleOrderIdsJSON)
+			if saleOrderIdsStr != "" && saleOrderIdsStr != "null" {
+				err = json.Unmarshal(saleOrderIdsJSON, &payment.SaleOrderIDs)
+				if err != nil {
+					// JSON解析失败时，设置为空数组，增强容错性
+					payment.SaleOrderIDs = []int{}
+				}
+			} else {
+				// 空字符串或null时，设置为空数组
+				payment.SaleOrderIDs = []int{}
+			}
+		} else {
+			// 未设置值时，设置为空数组
+			payment.SaleOrderIDs = []int{}
+		}
+
 		payments = append(payments, payment)
 	}
 
@@ -2950,9 +2996,16 @@ func createPayment(c *gin.Context) {
 		return
 	}
 
+	// 将saleOrderIDs转换为JSON字符串
+	saleOrderIdsJSON, err := json.Marshal(req.SaleOrderIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal sale order IDs"})
+		return
+	}
+
 	result, err := database.DB.Exec(
-		"INSERT INTO payments (code, payment_date, customer_id, amount, payment_method, account, payer_company, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		paymentCode, req.PaymentDate, req.CustomerID, req.Amount, req.PaymentMethod, req.Account, req.PayerCompany, req.Remark,
+		"INSERT INTO payments (code, payment_date, customer_id, sale_order_ids, amount, payment_method, account, payer_company, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		paymentCode, req.PaymentDate, req.CustomerID, saleOrderIdsJSON, req.Amount, req.PaymentMethod, req.Account, req.PayerCompany, req.Remark,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create payment"})
@@ -2967,14 +3020,34 @@ func createPayment(c *gin.Context) {
 
 	// 获取创建的收款记录
 	var payment Payment
+	var fetchedSaleOrderIdsJSON []byte
 	err = database.DB.QueryRow(`
-		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
+		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, p.sale_order_ids, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
 		FROM payments p 
 		LEFT JOIN customers c ON p.customer_id = c.id 
 		WHERE p.id = ?
 	`, id).Scan(
-		&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
+		&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &fetchedSaleOrderIdsJSON, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
 	)
+
+	// 解析sale_order_ids JSON
+	if fetchedSaleOrderIdsJSON != nil && len(fetchedSaleOrderIdsJSON) > 0 {
+		// 处理空字符串情况
+		saleOrderIdsStr := string(fetchedSaleOrderIdsJSON)
+		if saleOrderIdsStr != "" && saleOrderIdsStr != "null" {
+			err = json.Unmarshal(fetchedSaleOrderIdsJSON, &payment.SaleOrderIDs)
+			if err != nil {
+				// JSON解析失败时，设置为空数组，增强容错性
+				payment.SaleOrderIDs = []int{}
+			}
+		} else {
+			// 空字符串或null时，设置为空数组
+			payment.SaleOrderIDs = []int{}
+		}
+	} else {
+		// 未设置值时，设置为空数组
+		payment.SaleOrderIDs = []int{}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch created payment"})
 		return
@@ -3061,10 +3134,17 @@ func batchCreatePayments(c *gin.Context) {
 		// 使用预生成的编号
 		paymentCode := paymentCodes[i]
 
+		// 将saleOrderIDs转换为JSON字符串
+		saleOrderIdsJSON, err := json.Marshal(paymentReq.SaleOrderIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal sale order IDs"})
+			return
+		}
+
 		// 插入收款记录
 		result, err := tx.Exec(
-			"INSERT INTO payments (code, payment_date, customer_id, amount, payment_method, account, payer_company, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-			paymentCode, paymentReq.PaymentDate, paymentReq.CustomerID, paymentReq.Amount, paymentReq.PaymentMethod, paymentReq.Account, paymentReq.PayerCompany, paymentReq.Remark,
+			"INSERT INTO payments (code, payment_date, customer_id, sale_order_ids, amount, payment_method, account, payer_company, remark) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+			paymentCode, paymentReq.PaymentDate, paymentReq.CustomerID, saleOrderIdsJSON, paymentReq.Amount, paymentReq.PaymentMethod, paymentReq.Account, paymentReq.PayerCompany, paymentReq.Remark,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create payment: " + err.Error()})
@@ -3079,17 +3159,37 @@ func batchCreatePayments(c *gin.Context) {
 		}
 
 		var payment Payment
+		var fetchedSaleOrderIdsJSON []byte
 		err = tx.QueryRow(`
-			SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
+			SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, p.sale_order_ids, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
 			FROM payments p 
 			LEFT JOIN customers c ON p.customer_id = c.id 
 			WHERE p.id = ?
 		`, id).Scan(
-			&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
+			&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &fetchedSaleOrderIdsJSON, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
 		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch created payment"})
 			return
+		}
+
+		// 解析sale_order_ids JSON
+		if fetchedSaleOrderIdsJSON != nil && len(fetchedSaleOrderIdsJSON) > 0 {
+			// 处理空字符串情况
+			saleOrderIdsStr := string(fetchedSaleOrderIdsJSON)
+			if saleOrderIdsStr != "" && saleOrderIdsStr != "null" {
+				err = json.Unmarshal(fetchedSaleOrderIdsJSON, &payment.SaleOrderIDs)
+				if err != nil {
+					// JSON解析失败时，设置为空数组，增强容错性
+					payment.SaleOrderIDs = []int{}
+				}
+			} else {
+				// 空字符串或null时，设置为空数组
+				payment.SaleOrderIDs = []int{}
+			}
+		} else {
+			// 未设置值时，设置为空数组
+			payment.SaleOrderIDs = []int{}
 		}
 
 		payments = append(payments, payment)
@@ -3146,6 +3246,16 @@ func updatePayment(c *gin.Context) {
 		query += ", customer_id = ?"
 		args = append(args, req.CustomerID)
 	}
+	// 处理销售订单ID列表
+	if req.SaleOrderIDs != nil {
+		saleOrderIdsJSON, err := json.Marshal(req.SaleOrderIDs)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal sale order IDs"})
+			return
+		}
+		query += ", sale_order_ids = ?"
+		args = append(args, saleOrderIdsJSON)
+	}
 	if req.Amount > 0 {
 		query += ", amount = ?"
 		args = append(args, req.Amount)
@@ -3179,17 +3289,37 @@ func updatePayment(c *gin.Context) {
 
 	// 获取更新后的收款记录
 	var payment Payment
+	var fetchedSaleOrderIdsJSON []byte
 	err = database.DB.QueryRow(`
-		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
+		SELECT p.id, p.code, p.payment_date, p.customer_id, c.name as customer_name, p.sale_order_ids, CAST(p.amount AS FLOAT) as amount, p.payment_method, p.account, COALESCE(p.payer_company, ''), COALESCE(p.remark, ''), p.created_at, p.updated_at 
 		FROM payments p 
 		LEFT JOIN customers c ON p.customer_id = c.id 
 		WHERE p.id = ?
 	`, id).Scan(
-		&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
+		&payment.ID, &payment.Code, &payment.PaymentDate, &payment.CustomerID, &payment.CustomerName, &fetchedSaleOrderIdsJSON, &payment.Amount, &payment.PaymentMethod, &payment.Account, &payment.PayerCompany, &payment.Remark, &payment.CreatedAt, &payment.UpdatedAt,
 	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated payment"})
 		return
+	}
+
+	// 解析sale_order_ids JSON
+	if fetchedSaleOrderIdsJSON != nil && len(fetchedSaleOrderIdsJSON) > 0 {
+		// 处理空字符串情况
+		saleOrderIdsStr := string(fetchedSaleOrderIdsJSON)
+		if saleOrderIdsStr != "" && saleOrderIdsStr != "null" {
+			err = json.Unmarshal(fetchedSaleOrderIdsJSON, &payment.SaleOrderIDs)
+			if err != nil {
+				// JSON解析失败时，设置为空数组，增强容错性
+				payment.SaleOrderIDs = []int{}
+			}
+		} else {
+			// 空字符串或null时，设置为空数组
+			payment.SaleOrderIDs = []int{}
+		}
+	} else {
+		// 未设置值时，设置为空数组
+		payment.SaleOrderIDs = []int{}
 	}
 
 	// 异步同步该客户的对帐单

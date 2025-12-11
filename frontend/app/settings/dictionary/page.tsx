@@ -271,7 +271,7 @@ const DictionaryManagementPage = () => {
       ),
     },
     {
-      title: '操作',
+      title: '',
       key: 'action',
       width: '25%',
       render: (_: any, record: DictionaryItem) => (

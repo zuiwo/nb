@@ -18,7 +18,7 @@ export type Customer = {
 export type CreateCustomerDto = {
   name: string;
   code?: string;
-  phone: string;
+  phone?: string;
   province?: string;
   city?: string;
   district?: string;
